@@ -1,5 +1,5 @@
 
-/* Layout: an ink-dark hero band holding the one command and a live trace, then a light working page:
+/* Layout: a tinted hero band (ink-dark in dark mode) holding the one command and a live trace, then a light working page:
    playground, ways to run it, install, limits. Redline motif: cut text is struck in red. */
 :root {
   --bg: #f3f5f8;
@@ -11,30 +11,40 @@
   --accent-ink: #ffffff;
   --cut: #c4322b;
   --cut-bg: #fbe5e3;
-  --band: #10162a;
-  --band-ink: #eef1f8;
-  --band-muted: #9aa6c2;
-  --band-line: #26304a;
-  --band-accent: #93a6ff;
-  --band-cut: #ff8f86;
+  --band: #e9eefc;
+  --band-ink: #10162a;
+  --band-muted: #4b5670;
+  --band-line: #c9d2ea;
+  --band-accent: #2d4bd8;
+  --band-cut: #c4322b;
+  --band-raise: #ffffff;
+  --band-btn: #dfe5f7;
+  --band-btn-ink: #10162a;
+  --trace-bg: #ffffff;
+  --trace-fg: #26304a;
+  --trace-dim: #7a849b;
+  --trace-track: #dfe5f2;
   --term-bg: #151b29;
   --term-fg: #dfe5f2;
   --term-dim: #8a94ab;
   --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
   --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
     --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
-    --band: #080b14; --band-line: #1f2840; --term-bg: #0a0d14; color-scheme: dark;
+    --term-bg: #0a0d14; color-scheme: dark;
+    --band: #080b14; --band-ink: #eef1f8; --band-muted: #9aa6c2; --band-line: #1f2840; --band-accent: #93a6ff; --band-cut: #ff8f86; --band-raise: #1b2338; --band-btn: #2c3755; --band-btn-ink: #eef1f8; --trace-bg: #0b1020; --trace-fg: #cfd6e6; --trace-dim: #6f7a94; --trace-track: #26304a;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
   --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
-  --band: #080b14; --band-line: #1f2840; --term-bg: #0a0d14; color-scheme: dark;
+  --term-bg: #0a0d14; color-scheme: dark;
+    --band: #080b14; --band-ink: #eef1f8; --band-muted: #9aa6c2; --band-line: #1f2840; --band-accent: #93a6ff; --band-cut: #ff8f86; --band-raise: #1b2338; --band-btn: #2c3755; --band-btn-ink: #eef1f8; --trace-bg: #0b1020; --trace-fg: #cfd6e6; --trace-dim: #6f7a94; --trace-track: #26304a;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font: 400 1rem/1.55 var(--body); }
@@ -61,20 +71,21 @@ button { font-family: var(--body); }
 .hero h1 { font-weight: 800; font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 0.98; letter-spacing: -0.03em; }
 .hero h1 s { color: var(--band-cut); font-weight: 500; text-decoration-thickness: 0.07em; }
 .hero p { color: var(--band-muted); font-size: 1.1rem; max-width: 50ch; }
-.cmd { display: flex; align-items: center; gap: 10px; background: #1b2338; border: 1px solid var(--band-line); border-radius: 10px; padding: 6px 6px 6px 16px; min-width: 0; }
+.cmd { display: flex; align-items: center; gap: 10px; background: var(--band-raise); border: 1px solid var(--band-line); border-radius: 10px; padding: 6px 6px 6px 16px; min-width: 0; }
 .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--band-ink); font-size: 0.95rem; }
 .cmd code b { color: var(--band-accent); font-weight: 600; }
-.cmd button, .term .copy { font-weight: 600; font-size: 0.8rem; background: #2c3755; color: #eef1f8; border: 0; padding: 8px 12px; border-radius: 7px; cursor: pointer; flex: none; }
+.cmd button, .term .copy { font-weight: 600; font-size: 0.8rem; background: var(--band-btn); color: var(--band-btn-ink); border: 0; padding: 8px 12px; border-radius: 7px; cursor: pointer; flex: none; }
+.term .copy { background: #2c3755; color: #eef1f8; } /* code blocks stay dark in both themes */
 .agents { display: flex; flex-wrap: wrap; gap: 8px; }
 .agents span { font: 500 0.8rem var(--mono); color: var(--band-muted); border: 1px solid var(--band-line); padding: 4px 10px; border-radius: 99px; }
 
-.trace { background: #0b1020; border: 1px solid var(--band-line); border-radius: 12px; font: 400 0.82rem/1.7 var(--mono); color: #cfd6e6; overflow: hidden; min-width: 0; }
+.trace { background: var(--trace-bg); border: 1px solid var(--band-line); border-radius: 12px; font: 400 0.82rem/1.7 var(--mono); color: var(--trace-fg); overflow: hidden; min-width: 0; }
 .trace .top { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--band-line); color: var(--band-muted); font-size: 0.75rem; }
 .trace .body { padding: 14px; overflow-x: auto; }
 .trace .row { display: grid; grid-template-columns: 7.5ch 1fr; gap: 12px; white-space: nowrap; }
 .trace .k { color: var(--band-accent); }
-.trace .dim { color: #6f7a94; }
-.trace .bar { height: 6px; border-radius: 3px; background: #26304a; margin: 10px 0 4px; overflow: hidden; }
+.trace .dim { color: var(--trace-dim); }
+.trace .bar { height: 6px; border-radius: 3px; background: var(--trace-track); margin: 10px 0 4px; overflow: hidden; }
 .trace .bar i { display: block; height: 100%; width: 28%; background: var(--band-accent); border-radius: 3px; }
 .trace .big { font: 800 1.9rem/1 var(--display); color: var(--band-ink); }
 
@@ -189,3 +200,8 @@ body { margin: 0; }
   .docs nav.toc { position: static; display: flex; flex-wrap: wrap; gap: 6px 14px; }
   .docs nav.toc b { width: 100%; margin: 6px 0 0; }
 }
+
+/* Theme switch */
+.theme-btn { font: 500 0.85rem var(--body); background: transparent; color: var(--band-muted); border: 1px solid var(--band-line); border-radius: 99px; padding: 4px 12px; cursor: pointer; }
+.theme-btn:hover { color: var(--band-ink); }
+.topnav .links { align-items: center; }
