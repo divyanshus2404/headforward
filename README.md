@@ -77,6 +77,27 @@ export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
 
 API keys pass straight through to the provider and are never stored. Add `--cache` to have the proxy add Anthropic prompt-caching markers for apps that do not set any. Repeated context then costs about 10% of the normal input price, but a request that is never repeated costs 25% more, so use it for chat apps and agents, not one-off calls. If `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` is already set when the proxy starts, it forwards there instead of the public API, so company gateways keep working.
 
+### Claude chat (claude.ai and the desktop app)
+
+The chat apps talk only to Anthropic's servers, so nothing can sit in between. Instead, compress what you paste:
+
+```bash
+leantokens clip                       # compresses whatever you copied; then paste into Claude
+leantokens pack src/ logs/app.log     # bundles files into one compact <documents> block on your clipboard
+leantokens pack . --max-tokens 50000  # stop adding files at a token budget
+leantokens count notes.md             # Claude tokens before and after (exact with ANTHROPIC_API_KEY, free)
+```
+
+`clip` uses the JSON and log rules on data and the prompt rules on prose: copying a 30-row API response went from 1,112 to 90 tokens, and a chatty question from 31 to 11. `pack` follows `.gitignore`, skips lockfiles, binaries, `node_modules` and anything that looks like a secret (`.env`, keys, credentials), trims trailing spaces in code and compresses JSON and logs. It uses the `<document path="...">` format Anthropic recommends for long inputs.
+
+### Check your setup
+
+```bash
+leantokens doctor
+```
+
+Checks Python, the `leantokens` command, Claude Code and its sign-in, `ANTHROPIC_BASE_URL`, that the proxy can reach Anthropic, and the stats file, and prints the fix for anything wrong.
+
 ### Compress a prompt
 
 For pasting into chat apps:

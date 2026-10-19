@@ -810,9 +810,17 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
     return Handler
 
 
+class _QuietServer(http.server.ThreadingHTTPServer):
+    """Never print tracebacks: under `wrap` they would land on top of the agent's screen."""
+
+    def handle_error(self, request, client_address):
+        import traceback
+        _log_error("request from %s failed:\n%s" % (client_address, traceback.format_exc()))
+
+
 def start_proxy(port=0, upstream=None, log=None, lossy=False, record=None, smart=False, cache=False):
     handler = make_handler(upstream, log, lossy, record, smart, cache)
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    srv = _QuietServer(("127.0.0.1", port), handler)
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -1111,6 +1119,356 @@ def cmd_show(argv):
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Claude helpers: setup check, clipboard, file packing, exact token counts.
+# ---------------------------------------------------------------------------
+
+CLAUDE_MODEL = "claude-sonnet-5-5"
+
+
+def _ok(msg):
+    print("  ✓ " + msg)
+
+
+def _bad(msg, fix):
+    print("  ✗ " + msg)
+    print("      fix: " + fix)
+
+
+def cmd_doctor(argv):
+    """Check everything leantokens needs to work with Claude, and say how to fix what isn't."""
+    print("leantokens doctor\n")
+    problems = 0
+    if sys.version_info >= (3, 9):
+        _ok("Python %d.%d" % sys.version_info[:2])
+    else:
+        problems += 1
+        _bad("Python %d.%d is too old" % sys.version_info[:2], "install Python 3.9 or newer")
+
+    where = shutil.which("leantokens")
+    if where:
+        _ok("leantokens command on PATH (%s)" % where)
+    else:
+        problems += 1
+        _bad("`leantokens` is not on your PATH",
+             "pip install the package, or run the file directly: python3 leantokens.py ...")
+
+    claude = shutil.which("claude")
+    if claude:
+        try:
+            ver = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=15).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            ver = "version unknown"
+        _ok("Claude Code installed (%s)" % (ver or "version unknown"))
+        signed = _claude_signed_in(dict(os.environ))
+        if signed:
+            _ok("Claude Code is signed in" if not os.environ.get("ANTHROPIC_API_KEY") else "ANTHROPIC_API_KEY is set")
+        elif signed is False:
+            problems += 1
+            _bad("Claude Code is not signed in in the terminal (the desktop app's sign-in is separate)",
+                 "run `claude`, type /login, then exit")
+        else:
+            print("  ? could not check Claude Code sign-in")
+    else:
+        print("  - Claude Code not installed (only needed for `leantokens wrap claude`)")
+
+    base = os.environ.get("ANTHROPIC_BASE_URL")
+    if base:
+        host = urllib.parse.urlsplit(base).hostname or ""
+        if host in ("127.0.0.1", "localhost"):
+            try:
+                urllib.request.urlopen(base, timeout=3)
+                reachable = True
+            except urllib.error.HTTPError:
+                reachable = True
+            except OSError:
+                reachable = False
+            if reachable:
+                _ok("ANTHROPIC_BASE_URL points at a running local server (%s)" % base)
+            else:
+                problems += 1
+                _bad("ANTHROPIC_BASE_URL is %s but nothing is listening there, so Claude requests will fail" % base,
+                     "unset ANTHROPIC_BASE_URL, or start that proxy; `leantokens wrap claude` needs neither")
+        else:
+            _ok("ANTHROPIC_BASE_URL is %s; leantokens forwards there" % base)
+
+    srv = None
+    try:
+        srv = start_proxy()
+        c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=20)
+        c.request("POST", "/v1/messages", json.dumps({"model": CLAUDE_MODEL, "max_tokens": 1,
+                                                      "messages": [{"role": "user", "content": "ping"}]}),
+                  {"Content-Type": "application/json", "anthropic-version": "2023-06-01"})
+        resp = c.getresponse()
+        status = resp.status
+        resp.read()
+        c.close()
+        if status in (401, 403):
+            _ok("proxy reaches the Anthropic API (keyless test request was rejected as expected)")
+        elif status == 502:
+            problems += 1
+            _bad("proxy could not reach %s" % UPSTREAMS["anthropic"], "check your internet connection or proxy settings")
+        else:
+            _ok("proxy reaches the Anthropic API (status %d)" % status)
+    except OSError as e:
+        problems += 1
+        _bad("could not start the local proxy (%s)" % e, "check that nothing blocks local ports")
+    finally:
+        if srv:
+            srv.shutdown()
+
+    try:
+        os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
+        with open(STATS_FILE, "a"):
+            pass
+        _ok("stats file writable (%s)" % STATS_FILE)
+    except OSError:
+        problems += 1
+        _bad("cannot write %s" % STATS_FILE, "check permissions on ~/.leantokens")
+
+    try:
+        import tiktoken  # noqa: F401
+        _ok("tiktoken installed (exact counts for OpenAI models)")
+    except ImportError:
+        print("  - tiktoken not installed (optional): pip install tiktoken")
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        _ok("exact Claude token counts available (`leantokens count`)")
+    else:
+        print("  - set ANTHROPIC_API_KEY for exact Claude token counts (optional; counting is free)")
+
+    print("\n" + ("All good. Run: leantokens wrap claude" if not problems else
+                  "%d problem%s found; fix %s and run `leantokens doctor` again."
+                  % (problems, "" if problems == 1 else "s", "it" if problems == 1 else "them")))
+    return 1 if problems else 0
+
+
+def _clipboard_cmds():
+    if sys.platform == "darwin":
+        return ["pbpaste"], ["pbcopy"]
+    if os.name == "nt":
+        return (["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
+                ["powershell", "-NoProfile", "-Command", "$input | Set-Clipboard"])
+    if shutil.which("wl-paste"):
+        return ["wl-paste", "--no-newline"], ["wl-copy"]
+    if shutil.which("xclip"):
+        return ["xclip", "-o", "-selection", "clipboard"], ["xclip", "-selection", "clipboard"]
+    if shutil.which("xsel"):
+        return ["xsel", "--clipboard", "--output"], ["xsel", "--clipboard", "--input"]
+    return None, None
+
+
+def read_clipboard():
+    get, _ = _clipboard_cmds()
+    if not get:
+        raise RuntimeError("no clipboard tool found (install xclip, xsel or wl-clipboard)")
+    return subprocess.run(get, capture_output=True, timeout=10).stdout.decode("utf-8", "replace")
+
+
+def write_clipboard(text):
+    _, put = _clipboard_cmds()
+    if not put:
+        raise RuntimeError("no clipboard tool found (install xclip, xsel or wl-clipboard)")
+    subprocess.run(put, input=text.encode("utf-8"), timeout=10, check=True)
+
+
+def compress_any(text, level="medium"):
+    """Tool-output rules for data and logs, prompt rules for prose."""
+    tool = compress_tool(text)
+    if tool != text:
+        return tool
+    return compress(text, level)
+
+
+def _saving_line(before, after):
+    b, exact = count(before)
+    a, _ = count(after)
+    pct = 100.0 * (b - a) / b if b else 0
+    return "%s -> %s tokens, %.0f%% fewer%s" % (format(b, ","), format(a, ","), pct, "" if exact else " (estimate)")
+
+
+def cmd_clip(argv):
+    ap = argparse.ArgumentParser(prog="leantokens clip",
+                                 description="Compress the clipboard in place, ready to paste into claude.ai.")
+    ap.add_argument("-l", "--level", default="medium", choices=LEVELS, help="prompt level for prose (default medium)")
+    ap.add_argument("--print", action="store_true", help="print the result instead of replacing the clipboard")
+    a = ap.parse_args(argv)
+    try:
+        text = read_clipboard()
+    except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+        print("leantokens: could not read the clipboard: %s" % e, file=sys.stderr)
+        return 1
+    if not text.strip():
+        print("leantokens: the clipboard is empty. Copy some text first.", file=sys.stderr)
+        return 1
+    out = compress_any(text, a.level)
+    if a.print:
+        sys.stdout.write(out + "\n")
+    else:
+        try:
+            write_clipboard(out)
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            print("leantokens: could not write the clipboard: %s" % e, file=sys.stderr)
+            return 1
+    print("leantokens: clipboard %s. %s" % ("printed" if a.print else "compressed, ready to paste",
+                                             _saving_line(text, out)), file=sys.stderr)
+    return 0
+
+
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", "dist", "build", ".next", ".nuxt",
+             "target", ".tox", ".mypy_cache", ".pytest_cache", ".idea", ".vscode", "coverage", ".cache",
+             ".gradle", "vendor", "Pods", ".terraform", ".vercel"}
+SKIP_FILES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "Gemfile.lock",
+              "composer.lock", "go.sum", "Pipfile.lock", "uv.lock", ".DS_Store"}
+SKIP_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz", ".tar", ".tgz", ".bz2",
+            ".7z", ".woff", ".woff2", ".ttf", ".otf", ".mp3", ".mp4", ".mov", ".wav", ".so", ".dylib", ".dll",
+            ".exe", ".bin", ".pyc", ".class", ".jar", ".o", ".a", ".wasm", ".sqlite", ".db", ".map"}
+SECRET_NAMES = re.compile(r"(^\.env(\..*)?$|\.pem$|\.key$|^id_(rsa|ed25519|ecdsa)|credentials|secrets?\.)", re.I)
+
+
+def _git_files(root):
+    try:
+        out = subprocess.run(["git", "-C", root, "ls-files", "-co", "--exclude-standard"],
+                             capture_output=True, text=True, timeout=30)
+        if out.returncode == 0:
+            return [os.path.join(root, f) for f in out.stdout.splitlines() if f]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def _collect(paths):
+    files, skipped = [], []
+    for p in paths:
+        if os.path.isfile(p):
+            files.append(p)
+            continue
+        listed = _git_files(p)
+        if listed is None:
+            listed = []
+            for d, dirs, names in os.walk(p):
+                dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS)
+                listed += [os.path.join(d, n) for n in sorted(names)]
+        for f in listed:
+            parts = set(os.path.normpath(f).split(os.sep))
+            if parts & SKIP_DIRS:
+                continue
+            files.append(f)
+    out = []
+    for f in files:
+        name = os.path.basename(f)
+        if name in SKIP_FILES or os.path.splitext(name)[1].lower() in SKIP_EXT:
+            skipped.append((f, "lockfile or binary"))
+        elif SECRET_NAMES.search(name):
+            skipped.append((f, "may contain secrets"))
+        else:
+            out.append(f)
+    return out, skipped
+
+
+def pack_files(paths, budget=None):
+    """Build a Claude-friendly <documents> block. Returns (text, included, skipped)."""
+    files, skipped = _collect(paths)
+    docs, included = [], []
+    used = count("<documents>\n\n</documents>")[0] + 1  # the wrapper and joins count too
+    for f in files:
+        try:
+            raw = open(f, "rb").read()
+        except OSError as e:
+            skipped.append((f, "unreadable (%s)" % e.strerror))
+            continue
+        if b"\0" in raw[:8192]:
+            skipped.append((f, "binary"))
+            continue
+        text = raw.decode("utf-8", "replace")
+        ext = os.path.splitext(f)[1].lower()
+        if ext in (".json", ".log", ".jsonl", ".ndjson") or "log" in os.path.basename(f).lower():
+            body = compress_tool(text)
+        else:
+            body = "\n".join(l.rstrip() for l in text.split("\n")).strip("\n")
+        doc = '<document path="%s">\n%s\n</document>' % (os.path.relpath(f), body)
+        cost = count(doc)[0]
+        if budget and used + cost > budget:
+            skipped.append((f, "over the token budget"))
+            continue
+        used += cost
+        docs.append(doc)
+        included.append((f, len(text), cost))
+    return "<documents>\n" + "\n".join(docs) + "\n</documents>", included, skipped
+
+
+def cmd_pack(argv):
+    ap = argparse.ArgumentParser(prog="leantokens pack",
+                                 description="Bundle files into one compact block to paste into claude.ai.")
+    ap.add_argument("paths", nargs="+", help="files or folders (git-ignored files are left out)")
+    ap.add_argument("--max-tokens", type=int, help="stop adding files once this many tokens are used")
+    ap.add_argument("-o", "--out", help="write to this file instead of the clipboard")
+    ap.add_argument("--print", action="store_true", help="print to the terminal instead of the clipboard")
+    a = ap.parse_args(argv)
+    text, included, skipped = pack_files(a.paths, a.max_tokens)
+    if not included:
+        print("leantokens: no text files to pack.", file=sys.stderr)
+        return 1
+    raw_chars = sum(n for _, n, _ in included)
+    if a.out:
+        with open(a.out, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        dest = "written to %s" % a.out
+    elif a.print:
+        sys.stdout.write(text + "\n")
+        dest = "printed"
+    else:
+        try:
+            write_clipboard(text)
+            dest = "copied to the clipboard, ready to paste"
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            print("leantokens: could not write the clipboard (%s); use --out FILE" % e, file=sys.stderr)
+            return 1
+    tokens, exact = count(text)
+    print("leantokens: packed %d file%s, %s tokens%s (from %s characters of source), %s."
+          % (len(included), "" if len(included) == 1 else "s", format(tokens, ","),
+             "" if exact else " (estimate)", format(raw_chars, ","), dest), file=sys.stderr)
+    for f, why in skipped[:15]:
+        print("  skipped %s: %s" % (os.path.relpath(f), why), file=sys.stderr)
+    if len(skipped) > 15:
+        print("  ...and %d more skipped" % (len(skipped) - 15), file=sys.stderr)
+    return 0
+
+
+def claude_count(text, model=CLAUDE_MODEL):
+    """Exact Claude input tokens via Anthropic's free count_tokens endpoint, or None."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    body = {"model": model, "messages": [{"role": "user", "content": text}]}
+    return _api("anthropic", "/v1/messages/count_tokens", body, {})["input_tokens"]
+
+
+def cmd_count(argv):
+    ap = argparse.ArgumentParser(prog="leantokens count", description="Count tokens for Claude, before and after compression.")
+    ap.add_argument("file", nargs="?", default="-", help="file, or - for stdin (default)")
+    ap.add_argument("--model", default=CLAUDE_MODEL, help="Claude model (default %s)" % CLAUDE_MODEL)
+    ap.add_argument("-l", "--level", default="medium", choices=LEVELS)
+    a = ap.parse_args(argv)
+    text = sys.stdin.read() if a.file == "-" else open(a.file, encoding="utf-8").read()
+    out = compress_any(text, a.level)
+    try:
+        before, after = claude_count(text, a.model), None
+        if before is not None:
+            after = claude_count(out, a.model)
+    except RuntimeError as e:
+        print("leantokens: Anthropic count failed (%s); showing an estimate" % e, file=sys.stderr)
+        before = None
+    if before is None:
+        before, after = max(1, len(text) // 4), max(1, len(out) // 4)
+        how = "estimate; set ANTHROPIC_API_KEY for exact Claude counts (free)"
+    else:
+        how = "exact, %s" % a.model
+    pct = 100.0 * (before - after) / before if before else 0
+    print("as is:            %s tokens" % format(before, ","))
+    print("after leantokens: %s tokens  (%.0f%% fewer)" % (format(after, ","), pct))
+    print("(%s)" % how)
+    return 0
+
+
 USAGE = """usage:
   leantokens wrap claude [args...]       run Claude Code through the compressor
   leantokens wrap codex [args...]        run OpenAI Codex CLI (API key auth)
@@ -1119,6 +1477,12 @@ USAGE = """usage:
   leantokens stats                       real billed tokens and estimated savings
   leantokens eval FOLDER [--tokens-only] replay recorded requests, compare savings and answers
   leantokens show ID [--lines A-B]       print an output that --smart shortened
+
+Claude chat (claude.ai, desktop app):
+  leantokens clip                        compress the clipboard in place, then paste
+  leantokens pack PATH... [--max-tokens N]  bundle files into one compact block for Claude
+  leantokens count FILE                  Claude tokens before and after (exact with ANTHROPIC_API_KEY)
+  leantokens doctor                      check your Claude setup and say what to fix
   leantokens prompt.txt [-l high]        compress a prompt file (- for stdin)
 
 wrap and proxy options:
@@ -1144,6 +1508,8 @@ def main(argv=None):
         return cmd_eval(argv[1:])
     if argv and argv[0] == "show":
         return cmd_show(argv[1:])
+    if argv and argv[0] in ("doctor", "clip", "pack", "count"):
+        return {"doctor": cmd_doctor, "clip": cmd_clip, "pack": cmd_pack, "count": cmd_count}[argv[0]](argv[1:])
     if argv and argv[0] == "proxy":
         ap = argparse.ArgumentParser(prog="leantokens proxy")
         ap.add_argument("--port", type=int, default=8787)

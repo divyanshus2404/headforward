@@ -227,6 +227,52 @@ class NoiseTests(unittest.TestCase):
         self.assertEqual(lt._filter_noise(FILE), FILE)
 
 
+class ClaudeChatTests(unittest.TestCase):
+    def test_compress_any_picks_rules(self):
+        self.assertIn("_cols", lt.compress_any(json.dumps(ROWS, indent=2)))
+        self.assertEqual(lt.compress_any("Hi Claude! Could you please check this? Thanks!"), "Check this?")
+
+    def test_pack_skips_secrets_binaries_and_lockfiles(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name, data in [("app.py", b"print('hi')   \n"), (".env", b"KEY=secret"), ("id_rsa", b"x"),
+                               ("package-lock.json", b"{}"), ("logo.png", b"\x89PNG"), ("blob.dat", b"a\0b"),
+                               ("data.json", json.dumps(ROWS, indent=2).encode())]:
+                with open(os.path.join(d, name), "wb") as f:
+                    f.write(data)
+            os.makedirs(os.path.join(d, "node_modules", "x"))
+            with open(os.path.join(d, "node_modules", "x", "i.js"), "w") as f:
+                f.write("junk")
+            text, included, skipped = lt.pack_files([d])
+            names = sorted(os.path.basename(f) for f, _, _ in included)
+            self.assertEqual(names, ["app.py", "data.json"])
+            self.assertNotIn("secret", text)
+            self.assertIn("print('hi')\n</document>", text)  # trailing spaces trimmed
+            self.assertIn("_cols", text)                      # JSON compressed
+            why = dict((os.path.basename(f), r) for f, r in skipped)
+            self.assertEqual(why[".env"], "may contain secrets")
+            self.assertEqual(why["blob.dat"], "binary")
+
+    def test_pack_respects_budget(self):
+        with tempfile.TemporaryDirectory() as d:
+            for i in range(5):
+                with open(os.path.join(d, "f%d.txt" % i), "w") as f:
+                    f.write("word " * 400)
+            text, included, skipped = lt.pack_files([d], budget=1200)
+            self.assertLessEqual(lt.count(text)[0], 1200)
+            self.assertTrue(skipped)
+
+    def test_count_estimate_without_key(self):
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write("Hi Claude! Could you please check this? Thanks! " * 10)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            lt.cmd_count([f.name])
+        os.unlink(f.name)
+        self.assertIn("estimate", buf.getvalue())
+        self.assertIn("fewer", buf.getvalue())
+
+
 class CacheTests(unittest.TestCase):
     def test_adds_markers(self):
         b = {"system": "sys", "messages": [{"role": "user", "content": "hi"}]}
@@ -368,6 +414,23 @@ class ProxyTests(unittest.TestCase):
         b = FakeAPI.got["body"]
         self.assertIn("[x30]", b["messages"][0]["content"])
         self.assertEqual(b["input"][0]["output"], "[Same output as tool call c1 above.]")
+
+    def test_count_exact_with_key(self):
+        old = dict(lt.UPSTREAMS)
+        lt.UPSTREAMS["anthropic"] = self.upstream
+        os.environ["ANTHROPIC_API_KEY"] = "test"
+        try:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+                f.write(json.dumps(ROWS, indent=2))
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                lt.cmd_count([f.name])
+            os.unlink(f.name)
+        finally:
+            lt.UPSTREAMS.update(old)
+            del os.environ["ANTHROPIC_API_KEY"]
+        self.assertIn("exact, claude-sonnet-5-5", buf.getvalue())
+        self.assertEqual(FakeAPI.got["path"], "/v1/messages/count_tokens")
 
     def test_eval_replays_recordings(self):
         self.post(json.dumps(self.request()))
