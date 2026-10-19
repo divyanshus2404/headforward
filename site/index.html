@@ -1,0 +1,566 @@
+<title>leantokens</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: an ink-dark hero band holding the one command and a live trace, then a light working page:
+   playground, ways to run it, install, limits. Redline motif: cut text is struck in red. */
+:root {
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --ink: #141a26;
+  --muted: #5b6577;
+  --line: #d8dde6;
+  --accent: #2d4bd8;
+  --accent-ink: #ffffff;
+  --cut: #c4322b;
+  --cut-bg: #fbe5e3;
+  --band: #10162a;
+  --band-ink: #eef1f8;
+  --band-muted: #9aa6c2;
+  --band-line: #26304a;
+  --band-accent: #93a6ff;
+  --band-cut: #ff8f86;
+  --term-bg: #151b29;
+  --term-fg: #dfe5f2;
+  --term-dim: #8a94ab;
+  --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
+    --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
+    --band: #080b14; --band-line: #1f2840; --term-bg: #0a0d14; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
+  --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
+  --band: #080b14; --band-line: #1f2840; --term-bg: #0a0d14; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 1rem/1.55 var(--body); }
+.in {
+  max-width: 1120px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h2 { font-weight: 800; font-size: clamp(1.6rem, 3.4vw, 2.2rem); letter-spacing: -0.015em; line-height: 1.1; }
+h3 { font-weight: 800; font-size: 1.15rem; }
+p { margin: 0; }
+code { font-family: var(--mono); font-size: 0.9em; }
+.eyebrow { font: 600 0.75rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+.lede { max-width: 62ch; color: var(--muted); font-size: 1.08rem; }
+button { font-family: var(--body); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Hero band */
+.hero { background: var(--band); color: var(--band-ink); }
+.hero .in { padding-block: 56px 64px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
+.hero .copy { display: grid; gap: 22px; min-width: 0; }
+.hero .eyebrow { color: var(--band-accent); }
+.hero h1 { font-weight: 800; font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 0.98; letter-spacing: -0.03em; }
+.hero h1 s { color: var(--band-cut); font-weight: 500; text-decoration-thickness: 0.07em; }
+.hero p { color: var(--band-muted); font-size: 1.1rem; max-width: 50ch; }
+.cmd { display: flex; align-items: center; gap: 10px; background: #1b2338; border: 1px solid var(--band-line); border-radius: 10px; padding: 6px 6px 6px 16px; min-width: 0; }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--band-ink); font-size: 0.95rem; }
+.cmd code b { color: var(--band-accent); font-weight: 600; }
+.cmd button, .term .copy { font-weight: 600; font-size: 0.8rem; background: #2c3755; color: #eef1f8; border: 0; padding: 8px 12px; border-radius: 7px; cursor: pointer; flex: none; }
+.agents { display: flex; flex-wrap: wrap; gap: 8px; }
+.agents span { font: 500 0.8rem var(--mono); color: var(--band-muted); border: 1px solid var(--band-line); padding: 4px 10px; border-radius: 99px; }
+
+.trace { background: #0b1020; border: 1px solid var(--band-line); border-radius: 12px; font: 400 0.82rem/1.7 var(--mono); color: #cfd6e6; overflow: hidden; min-width: 0; }
+.trace .top { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--band-line); color: var(--band-muted); font-size: 0.75rem; }
+.trace .body { padding: 14px; overflow-x: auto; }
+.trace .row { display: grid; grid-template-columns: 7.5ch 1fr; gap: 12px; white-space: nowrap; }
+.trace .k { color: var(--band-accent); }
+.trace .dim { color: #6f7a94; }
+.trace .bar { height: 6px; border-radius: 3px; background: #26304a; margin: 10px 0 4px; overflow: hidden; }
+.trace .bar i { display: block; height: 100%; width: 28%; background: var(--band-accent); border-radius: 3px; }
+.trace .big { font: 800 1.9rem/1 var(--display); color: var(--band-ink); }
+
+/* Main */
+main .in { padding-block: 64px 72px; display: grid; gap: 72px; }
+section { display: grid; gap: 20px; min-width: 0; }
+.head { display: grid; gap: 10px; }
+
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.facts div { background: var(--surface); padding: 20px; display: grid; gap: 8px; align-content: start; }
+.facts p { color: var(--muted); font-size: 0.95rem; }
+
+/* Playground */
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 9px; padding: 3px; gap: 2px; }
+.seg button { font-weight: 600; font-size: 0.85rem; border: 0; background: transparent; color: var(--muted); padding: 7px 13px; border-radius: 6px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
+.toggle { display: inline-flex; gap: 8px; align-items: center; font-size: 0.9rem; color: var(--muted); cursor: pointer; }
+.toggle input { accent-color: var(--accent); width: 16px; height: 16px; }
+.panes { display: grid; grid-template-columns: 1fr 1fr; }
+.pane { display: grid; grid-template-rows: auto 1fr; min-width: 0; }
+.pane + .pane { border-left: 1px solid var(--line); }
+.pane-head { display: flex; justify-content: space-between; gap: 8px; padding: 10px 16px 0; font: 600 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.pane-head .n { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
+textarea, .out { width: 100%; min-height: 340px; max-height: 60vh; overflow: auto; margin: 0; padding: 12px 16px 16px; border: 0; background: transparent; color: var(--ink); font: 400 0.85rem/1.6 var(--mono); resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; }
+textarea:focus { outline: none; }
+.pane:focus-within .pane-head { color: var(--accent); }
+.out del { color: var(--cut); background: var(--cut-bg); text-decoration-color: var(--cut); }
+.stats { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 28px; padding: 14px 16px; border-top: 1px solid var(--line); }
+.stat { display: grid; }
+.stat b { font: 800 1.6rem/1.1 var(--display); font-variant-numeric: tabular-nums; }
+.stat span { font-size: 0.78rem; color: var(--muted); }
+.stat.big b { color: var(--accent); }
+.stats .spacer { flex: 1; }
+.btn { font-weight: 600; font-size: 0.9rem; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.note { font-size: 0.82rem; color: var(--muted); }
+.tool .note { padding: 0 16px 14px; }
+
+/* Ways to run */
+.ways { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.way { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.way p { color: var(--muted); font-size: 0.95rem; }
+.term { position: relative; background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 12px 14px; font: 400 0.8rem/1.65 var(--mono); overflow-x: auto; white-space: pre; }
+.term.has-copy { padding-right: 76px; }
+.term .c { color: var(--term-dim); }
+.term .copy { position: absolute; top: 7px; right: 7px; font-size: 0.72rem; padding: 6px 10px; }
+
+.steps { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; counter-increment: s; }
+.steps li::before { content: counter(s); font: 600 0.8rem/28px var(--mono); text-align: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); color: var(--muted); }
+.steps li > div { display: grid; gap: 8px; min-width: 0; }
+details { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
+details pre { margin: 0; padding: 0 16px 16px; max-height: 420px; overflow: auto; font: 400 0.78rem/1.5 var(--mono); }
+.limits { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; color: var(--muted); max-width: 75ch; }
+.limits b { color: var(--ink); font-weight: 600; }
+
+@media (max-width: 900px) {
+  .hero .in { grid-template-columns: 1fr; gap: 36px; padding-block: 40px 48px; }
+  .ways, .facts { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .panes { grid-template-columns: 1fr; }
+  .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
+  textarea, .out { min-height: 220px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .trace .bar i { animation: fill 1.4s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes fill { from { width: 100%; } }
+}
+</style>
+
+<header class="hero">
+  <div class="in">
+    <div class="copy">
+      <span class="eyebrow">leantokens · open source · one Python file</span>
+      <h1>Your agent reads <s>everything</s> what matters.</h1>
+      <p>Coding agents burn most of their tokens re-reading tool output: JSON from APIs, logs, file reads. leantokens sits between the agent and the model and shrinks that output before it is sent. You keep using Claude Code or Codex exactly as before.</p>
+      <div class="cmd"><code>leantokens <b>wrap claude</b></code><button id="copy-hero" data-copy="leantokens wrap claude">Copy</button></div>
+      <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Codex CLI</span><span>Aider</span><span>Anthropic SDK</span><span>OpenAI SDK</span></div>
+    </div>
+    <div class="trace" aria-label="Example session">
+      <div class="top"><span>leantokens · test run</span><span>/v1/messages</span></div>
+      <div class="body">
+        <div class="row"><span class="k">tool</span><span>orders_query → 40 rows JSON</span></div>
+        <div class="row"><span class="k">json</span><span>40 objects → 1 header + 40 rows</span></div>
+        <div class="row"><span class="k">tool</span><span>tail app.log → 31 lines</span></div>
+        <div class="row"><span class="k">logs</span><span>30 repeats → 1 line <span class="dim">[x30]</span>, colors stripped</span></div>
+        <div class="row"><span class="k">user</span><span class="dim">your messages: untouched</span></div>
+        <div class="row"><span class="k">stream</span><span class="dim">response passed through as it arrives</span></div>
+        <div class="bar"><i></i></div>
+        <div class="row"><span class="big">72%</span><span style="align-self:end">fewer tool-output tokens<br><span class="dim">~1,164 → ~329 on this request</span></span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="in">
+    <section>
+      <div class="head">
+        <span class="eyebrow">How it saves</span>
+        <h2>Same answers, smaller context.</h2>
+      </div>
+      <div class="facts">
+        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once and the values as rows. Nothing is dropped.</p></div>
+        <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Terminal color codes, trailing spaces and runs of blank lines go.</p></div>
+        <div><h3>Prompt caching keeps working</h3><p>The same tool output always compresses to the same bytes, so Anthropic and OpenAI cache hits on earlier turns still land.</p></div>
+      </div>
+    </section>
+
+    <section id="try">
+      <div class="head">
+        <span class="eyebrow">Try it</span>
+        <h2>Paste tool output or a prompt.</h2>
+        <p class="lede">Runs entirely in your browser. The samples are examples; replace them with your own.</p>
+      </div>
+      <div class="tool">
+        <div class="bar">
+          <div class="seg" role="group" aria-label="What are you compressing">
+            <button id="mode-tool" data-mode="tool" aria-pressed="true">Agent tool output</button>
+            <button id="mode-prompt" data-mode="prompt" aria-pressed="false">Prompt</button>
+          </div>
+          <div class="controls">
+            <div class="seg" role="group" aria-label="Prompt level" id="levels" hidden>
+              <button id="lv-light" data-level="light">Light</button>
+              <button id="lv-medium" data-level="medium">Medium</button>
+              <button id="lv-high" data-level="high">High</button>
+              <button id="lv-max" data-level="max">Max</button>
+            </div>
+            <label class="toggle"><input type="checkbox" id="show-cuts" checked><span>Show cuts</span></label>
+          </div>
+        </div>
+        <div class="panes">
+          <div class="pane">
+            <div class="pane-head"><label for="src">Input</label><span class="n" id="n-in"></span></div>
+            <textarea id="src" spellcheck="false"></textarea>
+          </div>
+          <div class="pane">
+            <div class="pane-head"><span>What the model sees</span><span class="n" id="n-out"></span></div>
+            <div class="out" id="out" tabindex="0" aria-live="polite"></div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat big"><b id="pct">0%</b><span>fewer tokens</span></div>
+          <div class="stat"><b id="saved">0</b><span>tokens saved</span></div>
+          <div class="stat"><b id="k">0</b><span>saved if an agent reads this 1,000 times</span></div>
+          <div class="spacer"></div>
+          <button class="btn" id="clear">Clear</button>
+          <button class="btn primary" id="copy-out">Copy result</button>
+        </div>
+        <p class="note">Token counts here are estimates at about 4 characters per token. The script gives exact counts with <code>tiktoken</code> installed.</p>
+      </div>
+    </section>
+
+    <section id="use">
+      <div class="head">
+        <span class="eyebrow">Use it your way</span>
+        <h2>Wrap an agent, run a proxy, or pipe a prompt.</h2>
+      </div>
+      <div class="ways">
+        <div class="way">
+          <h3>Wrap a coding agent</h3>
+          <p>Starts a private proxy, launches the agent pointed at it, and prints what you saved when you quit.</p>
+          <div class="term"><span class="c"># Claude Code</span>
+leantokens wrap claude
+<span class="c"># Codex CLI, API key login</span>
+leantokens wrap codex
+<span class="c"># totals so far</span>
+leantokens stats</div>
+        </div>
+        <div class="way">
+          <h3>Proxy for any app</h3>
+          <p>Point your own code or SDK at the proxy. Keys pass straight through to the provider and are never stored.</p>
+          <div class="term">leantokens proxy
+
+<span class="c"># then, in your app's shell</span>
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+export OPENAI_BASE_URL=http://127.0.0.1:8787/v1</div>
+        </div>
+        <div class="way">
+          <h3>Compress a prompt</h3>
+          <p>For chat apps. Cuts filler, greetings and repeats from what you paste into Claude or ChatGPT.</p>
+          <div class="term"><span class="c"># clipboard in, clipboard out (macOS)</span>
+pbpaste | leantokens - -l high | pbcopy
+<span class="c"># tool output from a file</span>
+leantokens api.json --tool</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="install">
+      <div class="head">
+        <span class="eyebrow">Install</span>
+        <h2>One command. No dependencies.</h2>
+        <p class="lede">Python 3.9 or newer on macOS, Linux or Windows.</p>
+      </div>
+      <ol class="steps">
+        <li><div>
+          <p>Install from PyPI.</p>
+          <div class="term has-copy">pip install leantokens<button class="copy" data-copy="pip install leantokens">Copy</button></div>
+          <p class="note">No pip? Copy the script instead, save it as <code>leantokens.py</code>, and run <code>python3 leantokens.py</code> wherever this page says <code>leantokens</code>.</p>
+          <div><button class="btn primary" id="copy-script">Copy leantokens.py</button></div>
+          <div class="term has-copy"><span class="c"># macOS: save what you just copied</span>
+pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.py">Copy</button></div>
+          <p class="note">Linux: <code>xclip -o -sel clip &gt; leantokens.py</code>. Windows: paste into Notepad and save as <code>leantokens.py</code>.</p>
+        </div></li>
+        <li><div>
+          <p>Run your agent through it.</p>
+          <div class="term has-copy">leantokens wrap claude<button class="copy" data-copy="leantokens wrap claude">Copy</button></div>
+        </div></li>
+        <li><div>
+          <p>Optional: exact token counts.</p>
+          <div class="term has-copy">pip install "leantokens[exact]"<button class="copy" data-copy='pip install "leantokens[exact]"'>Copy</button></div>
+        </div></li>
+      </ol>
+      <details>
+        <summary>Read the script before you run it</summary>
+        <pre id="script-view">Loading…</pre>
+      </details>
+    </section>
+
+    <section id="limits">
+      <div class="head">
+        <span class="eyebrow">Know before you run it</span>
+        <h2>What it does not do.</h2>
+      </div>
+      <ul class="limits">
+        <li><b>It only touches tool output.</b> Your messages and the system prompt reach the model unchanged.</li>
+        <li><b>Savings depend on the work.</b> JSON-heavy and log-heavy sessions save the most. Sessions that mostly read source code save little, because code is left as written.</li>
+        <li><b>Codex with a ChatGPT login</b> talks to ChatGPT's servers, not the API, so it bypasses the proxy. Use an API key login.</li>
+        <li><b>Chat apps in the browser</b> (claude.ai, chatgpt.com) can't be proxied. Use the prompt compressor and paste.</li>
+      </ul>
+    </section>
+  </div>
+</main>
+
+<script>
+const LEVELS = ["light", "medium", "high", "max"];
+const CODE = /(```[^\n]*\n[\s\S]*?```|`[^`\n]+`)/g;
+const PHRASES = [
+  [/\bin order to\b/gi, "to"], [/\bdue to the fact that\b/gi, "because"],
+  [/\bowing to the fact that\b/gi, "because"], [/\bin spite of the fact that\b/gi, "although"],
+  [/\bat this point in time\b/gi, "now"], [/\bat the present time\b/gi, "now"],
+  [/\bin the event that\b/gi, "if"], [/\bfor the purpose of\b/gi, "for"],
+  [/\bwith regard to\b/gi, "about"], [/\bwith respect to\b/gi, "about"],
+  [/\bin relation to\b/gi, "about"], [/\ba large number of\b/gi, "many"],
+  [/\ba small number of\b/gi, "few"], [/\bthe majority of\b/gi, "most"],
+  [/\b(is|are) able to\b/gi, "can"], [/\bhas the ability to\b/gi, "can"],
+  [/\bmake sure (that )?/gi, "ensure "], [/\bin addition( to that)?,?/gi, "also"],
+  [/\bas well as\b/gi, "and"], [/\bprior to\b/gi, "before"],
+  [/\bsubsequent to\b/gi, "after"], [/\bin the near future\b/gi, "soon"],
+  [/\bon a daily basis\b/gi, "daily"], [/\bfor example\b/gi, "e.g."],
+  [/\bthat is to say\b/gi, "i.e."], [/\bin other words\b/gi, "i.e."],
+  [/\bis going to\b/gi, "will"], [/\bare going to\b/gi, "will"],
+];
+const FILLER = [
+  /^(hi|hello|hey)( there| claude| chatgpt| gpt)?[!,.]*\s*/gim,
+  /\b(thanks|thank you)( so much| very much)?( in advance)?[!.]*/gi,
+  /\bi hope (this|that) (helps|makes sense)[.!]*/gi,
+  /\bi hope you('re| are) (doing )?(well|good|great)[.!]*/gi,
+  /\b(please|kindly)\b,?/gi,
+  /\bi would like you to\b/gi, /\bi want you to\b/gi, /\bi need you to\b/gi,
+  /\b(could|can|would) you( please)?\b/gi,
+  /\bif (it's|it is) possible,?/gi, /\bif possible,?/gi,
+  /\bit is important to note that\b/gi, /\bit should be noted that\b/gi,
+  /\bplease note that\b/gi, /\bnote that\b/gi,
+  /\b(just|basically|actually|really|very|simply|quite|literally|totally)\b/gi,
+  /\bas a matter of fact,?/gi, /\bto be honest,?/gi,
+];
+const HEDGES = [
+  /\bi think( that)?\b/gi, /\bi believe( that)?\b/gi, /\bi feel like\b/gi,
+  /\bit seems (like|that)\b/gi, /\bsort of\b/gi, /\bkind of\b/gi,
+  /\bin my opinion,?/gi, /\bfeel free to\b/gi,
+];
+const COMMENT_LINE = /^\s*(#(?!!)|\/\/|--\s)/;
+
+function prose(s, i) {
+  s = s.replace(/[ \t]+/g, " ").replace(/ *\n */g, "\n").replace(/\n{3,}/g, "\n\n");
+  if (i >= 1) {
+    for (const [p, r] of PHRASES) s = s.replace(p, r);
+    for (const p of FILLER) s = s.replace(p, "");
+  }
+  if (i >= 2) {
+    for (const p of HEDGES) s = s.replace(p, "");
+    s = s.replace(/\b(a|an|the) (?=\w)/gi, "");
+    s = s.replace(/(\*\*|__)(.+?)\1/g, "$2");
+  }
+  s = s.replace(/(\*\*|__)\s*\1/g, "");
+  s = s.replace(/ {2,}/g, " ").replace(/ +([,.;:!?])/g, "$1");
+  s = s.replace(/([,;:])\1+/g, "$1").replace(/^[,;:] */gm, "");
+  s = s.replace(/(?<=\n) +| +(?=\n)/g, "");
+  s = s.replace(/(\n|(?<!e\.g)(?<!i\.e)[.!?] +)([a-z])/g, (m, a, b) => a + b.toUpperCase());
+  return s;
+}
+
+function dedupe(s, seen) {
+  const out = [];
+  for (const line of s.split("\n")) {
+    const kept = [];
+    for (const sent of line.split(/(?<=[.!?]) +/)) {
+      const key = sent.replace(/\W+/g, " ").trim().toLowerCase();
+      if (key.length > 12 && seen.has(key)) continue;
+      seen.add(key);
+      kept.push(sent);
+    }
+    if (line.trim() && !kept.length) continue;
+    out.push(kept.join(" "));
+  }
+  return out.join("\n");
+}
+
+function code(block, i) {
+  if (!block.startsWith("```") || i < 2) return block;
+  const nl = block.indexOf("\n");
+  const head = block.slice(0, nl);
+  let body = block.slice(nl + 1, -3);
+  const lang = head.slice(3).trim().toLowerCase();
+  if ((lang === "json" || lang === "") && "{[".includes(body.trim()[0] || "x")) {
+    try { return head + "\n" + JSON.stringify(JSON.parse(body)) + "\n```"; } catch (e) {}
+  }
+  if (i >= 3) {
+    body = body.split("\n").map(l => l.trimEnd()).filter(l => l.trim() && !COMMENT_LINE.test(l)).join("\n") + "\n";
+  }
+  return head + "\n" + body + "```";
+}
+
+function compress(text, level) {
+  const i = LEVELS.indexOf(level);
+  const seen = new Set();
+  const parts = text.split(CODE);
+  let out = parts.map((p, k) => {
+    if (k % 2 === 1) return code(p, i);
+    const s = prose(p, i);
+    return i >= 1 ? dedupe(s, seen) : s;
+  }).join("");
+  out = out.replace(/\n{3,}/g, "\n\n").trim();
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+/* Tool-output compressor: mirrors compress_tool() in leantokens.py. */
+const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
+const LINE_NO = /^ +(\d+)(\t|→)/gm;
+function tabulate(o) {
+  if (Array.isArray(o)) {
+    const items = o.map(tabulate);
+    if (items.length >= 3 && items.every(v => v && typeof v === "object" && !Array.isArray(v))) {
+      const cols = Object.keys(items[0]);
+      if (items.every(v => { const k = Object.keys(v); return k.length === cols.length && k.every((c, i) => c === cols[i]); }))
+        return { _cols: cols, _rows: items.map(v => cols.map(c => v[c])) };
+    }
+    return items;
+  }
+  if (o && typeof o === "object") { const r = {}; for (const k in o) r[k] = tabulate(o[k]); return r; }
+  return o;
+}
+function compressTool(text) {
+  if (text.length < 200) return text;
+  let s = text.replace(ANSI, "");
+  const t = s.trim();
+  if (t[0] === "{" || t[0] === "[") {
+    try { const out = JSON.stringify(tabulate(JSON.parse(t))); return out.length < text.length ? out : text; } catch (e) {}
+  }
+  s = s.replace(LINE_NO, "$1$2");
+  const lines = s.split("\n").map(l => l.trimEnd()), out = [];
+  let prev = null, n = 0;
+  for (const line of [...lines, null]) {
+    if (line === prev) { n++; continue; }
+    if (prev !== null) out.push(n === 1 ? prev : prev + "  [x" + n + "]");
+    prev = line; n = 1;
+  }
+  const r = out.join("\n").replace(/\n{3,}/g, "\n\n");
+  return r.length < text.length ? r : text;
+}
+
+const est = s => s ? Math.max(1, Math.round(s.length / 4)) : 0;
+const esc = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+function diffHTML(a, b) {
+  const tok = s => s.match(/\s+|[^\s]+/g) || [];
+  const A = tok(a), B = tok(b);
+  if (A.length * B.length > 4e6) return esc(b);
+  const n = A.length, m = B.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let x = n - 1; x >= 0; x--) for (let y = m - 1; y >= 0; y--)
+    dp[x][y] = A[x] === B[y] ? dp[x + 1][y + 1] + 1 : Math.max(dp[x + 1][y], dp[x][y + 1]);
+  let x = 0, y = 0, html = "", cut = "";
+  const flush = () => { if (cut.trim()) html += "<del>" + esc(cut.trim()) + "</del> "; cut = ""; };
+  while (x < n && y < m) {
+    if (A[x] === B[y]) { flush(); html += esc(B[y]); x++; y++; }
+    else if (dp[x + 1][y] >= dp[x][y + 1]) { cut += A[x]; x++; }
+    else { flush(); html += esc(B[y]); y++; }
+  }
+  while (x < n) cut += A[x++];
+  flush();
+  while (y < m) html += esc(B[y++]);
+  return html;
+}
+
+const ROWS = [];
+const names = ["Ana Ruiz", "Ben Okafor", "Chen Wei", "Dara Singh", "Eli Novak", "Fay Moreau", "Gus Tanaka", "Hana Ito"];
+for (let i = 0; i < 8; i++) ROWS.push({ order_id: 10421 + i, customer: names[i], status: i % 3 ? "shipped" : "pending", items: 1 + (i * 7) % 5, total_usd: +(18.5 + i * 11.25).toFixed(2), warehouse: "ams-2" });
+const SAMPLE_TOOL = JSON.stringify({ query: "orders where created_at > 2026-10-12", count: ROWS.length, results: ROWS }, null, 2);
+
+const SAMPLE_PROMPT = `Hi Claude! I hope you're doing well. I would like you to please review the following code. It is important to note that the function is basically very slow due to the fact that it loops over every item, and I think it sort of needs a fix.
+
+Could you just make sure that it is able to handle a large number of items? In addition, **please** keep the API the same as well as the tests.
+Could you just make sure that it is able to handle a large number of items?
+
+\`\`\`python
+# helper to find duplicates
+def find_dupes(orders):
+
+    return [o for o in orders if orders.count(o) > 1]
+\`\`\`
+Thanks so much in advance!`;
+
+const $ = id => document.getElementById(id);
+const src = $("src"), out = $("out");
+let mode = "tool", level = "high", result = "";
+const drafts = { tool: SAMPLE_TOOL, prompt: SAMPLE_PROMPT };
+const load = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const save = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+function render() {
+  result = mode === "tool" ? compressTool(src.value) : compress(src.value, level);
+  const a = est(src.value), b = est(result), saved = a - b;
+  $("n-in").textContent = "≈" + a.toLocaleString() + " tokens";
+  $("n-out").textContent = "≈" + b.toLocaleString() + " tokens";
+  $("pct").textContent = (a ? Math.round(100 * saved / a) : 0) + "%";
+  $("saved").textContent = saved.toLocaleString();
+  $("k").textContent = (saved * 1000).toLocaleString();
+  const showDiff = $("show-cuts").checked && mode === "prompt";
+  if (showDiff) out.innerHTML = diffHTML(src.value, result);
+  else out.textContent = result;
+}
+function setMode(m) {
+  drafts[mode] = src.value;
+  mode = m;
+  src.value = drafts[m];
+  document.querySelectorAll("[data-mode]").forEach(b => b.setAttribute("aria-pressed", b.dataset.mode === m));
+  $("levels").hidden = m !== "prompt";
+  $("show-cuts").parentElement.hidden = m !== "prompt";
+  save("ts-mode", m);
+  render();
+}
+function setLevel(l) {
+  level = l;
+  document.querySelectorAll("[data-level]").forEach(b => b.setAttribute("aria-pressed", b.dataset.level === l));
+  save("ts-level", l);
+  render();
+}
+async function copyText(text, btn) {
+  const label = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+  catch (e) { btn.textContent = "Copy blocked: select the text"; }
+  setTimeout(() => (btn.textContent = label), 1600);
+}
+
+let t;
+src.addEventListener("input", () => { clearTimeout(t); t = setTimeout(render, 120); });
+document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+document.querySelectorAll("[data-level]").forEach(b => b.addEventListener("click", () => setLevel(b.dataset.level)));
+$("show-cuts").addEventListener("change", render);
+$("clear").addEventListener("click", () => { src.value = ""; render(); src.focus(); });
+$("copy-out").addEventListener("click", e => copyText(result, e.currentTarget));
+document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => copyText(b.dataset.copy, b)));
+
+let script = "";
+fetch("leantokens.py").then(r => r.ok ? r.text() : Promise.reject()).then(s => {
+  script = s; $("script-view").textContent = s;
+}).catch(() => { $("script-view").textContent = "Couldn't load the script. Refresh the page to try again."; });
+$("copy-script").addEventListener("click", e => {
+  if (!script) { e.currentTarget.textContent = "Still loading, try again"; return; }
+  copyText(script, e.currentTarget);
+});
+
+const savedLevel = load("ts-level");
+level = LEVELS.includes(savedLevel) ? savedLevel : "high";
+document.querySelectorAll("[data-level]").forEach(b => b.setAttribute("aria-pressed", b.dataset.level === level));
+src.value = drafts.tool;
+setMode(load("ts-mode") === "prompt" ? "prompt" : "tool");
+</script>

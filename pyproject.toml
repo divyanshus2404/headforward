@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "leantokens"
+version = "0.1.0"
+description = "Cut the tokens Claude Code, Codex and LLM apps spend: compresses tool output, JSON and logs through a local proxy."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Divyanshu" }]
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["llm", "tokens", "claude", "openai", "anthropic", "compression", "proxy", "claude-code", "codex"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries",
+]
+
+[project.optional-dependencies]
+exact = ["tiktoken>=0.5"]
+
+[project.urls]
+Homepage = "https://github.com/divyanshus2404/leantokens"
+Issues = "https://github.com/divyanshus2404/leantokens/issues"
+
+[project.scripts]
+leantokens = "leantokens:main"
+
+[tool.setuptools]
+py-modules = ["leantokens"]
