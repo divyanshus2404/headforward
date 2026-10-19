@@ -120,6 +120,81 @@ class DedupeTests(unittest.TestCase):
         self.assertEqual(short["messages"], longer["messages"][:2])
 
 
+FILE = "\n".join("%d:    line %d of the module" % (n, n) for n in range(1, 60))
+
+
+class SmartTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        lt.BLOB_DIR = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def body(self, *outputs):
+        return {"messages": [{"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t%d" % i, "content": o}]} for i, o in enumerate(outputs)]}
+
+    def test_file_view_starting_with_bracket_is_referenced(self):
+        first = "[File: app.py (59 lines total)]\n" + FILE
+        edited = "[File: app.py (59 lines total)]\n" + FILE.replace("line 30 of", "EDITED line 30 of")
+        b = self.body(first, edited)
+        lt.compress_request(b, smart=True)
+        out = b["messages"][1]["content"][0]["content"]
+        self.assertIn("EDITED line 30", out)
+        # Header + module lines 1-29 match t0's lines 1-30; lines 31-59 match t0's lines 32-60.
+        self.assertIn("[30 lines identical to lines 1-30 of tool call t0]", out)
+        self.assertIn("[29 lines identical to lines 32-60 of tool call t0]", out)
+        self.assertEqual(b["messages"][0]["content"][0]["content"], first)
+
+    def test_references_off_by_default(self):
+        b = self.body("x\n" + FILE, "y\n" + FILE)
+        lt.compress_request(b)
+        self.assertNotIn("identical to lines", b["messages"][1]["content"][0]["content"])
+
+    def test_reference_points_at_the_right_lines(self):
+        a = "header\n" + FILE
+        b = self.body(a, "other\n" + "\n".join(FILE.split("\n")[9:20]))
+        lt.compress_request(b, smart=True)
+        ref = b["messages"][1]["content"][0]["content"].split("\n")[1]
+        self.assertEqual(ref, "[11 lines identical to lines 11-21 of tool call t0]")
+        self.assertEqual(a.split("\n")[10:21], FILE.split("\n")[9:20])
+
+    def test_huge_output_is_expandable(self):
+        big = "\n".join("step %d ok" % i for i in range(1000)).replace("step 500 ok", "step 500 FAILED: boom")
+        b = self.body(big)
+        lt.compress_request(b, smart=True)
+        out = b["messages"][0]["content"][0]["content"]
+        self.assertLess(len(out), len(big) / 3)
+        self.assertIn("501: step 500 FAILED: boom", out)
+        blob = lt.re.search(r"leantokens show ([0-9a-f]{12})", out).group(1)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            lt.cmd_show([blob, "--lines", "500-502"])
+        self.assertEqual(buf.getvalue(), "500: step 499 ok\n501: step 500 FAILED: boom\n502: step 501 ok\n")
+
+    def test_smart_is_deterministic_and_keeps_earlier_turns(self):
+        outs = ["[File: a]\n" + FILE, "[File: a]\n" + FILE.replace("line 5 ", "line five "), "[File: a]\n" + FILE]
+        short, longer = self.body(*outs[:2]), self.body(*outs)
+        lt.compress_request(short, smart=True)
+        lt.compress_request(longer, smart=True)
+        self.assertEqual(short["messages"], longer["messages"][:2])
+
+
+class CacheTests(unittest.TestCase):
+    def test_adds_markers(self):
+        b = {"system": "sys", "messages": [{"role": "user", "content": "hi"}]}
+        self.assertTrue(lt.add_cache_control(b))
+        self.assertEqual(b["system"][0]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(b["messages"][-1]["content"][-1]["cache_control"], {"type": "ephemeral"})
+
+    def test_leaves_existing_markers_alone(self):
+        b = {"system": [{"type": "text", "text": "s", "cache_control": {"type": "ephemeral"}}],
+             "messages": [{"role": "user", "content": "hi"}]}
+        self.assertFalse(lt.add_cache_control(b))
+        self.assertEqual(b["messages"][0]["content"], "hi")
+
+
 class UsageTests(unittest.TestCase):
     def test_anthropic_stream(self):
         raw = (b'event: message_start\ndata: {"type":"message_start","message":{"usage":'

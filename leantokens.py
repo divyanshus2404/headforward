@@ -330,18 +330,96 @@ def _tool_results(body):
                 yield it, "output", it.get("call_id")
 
 
-def compress_request(body, lossy=False):
+REF_MIN_RUN = 6          # shortest run of repeated lines worth a reference
+BIG_LINES = 400          # outputs longer than this become expandable in smart mode
+BLOB_DIR = os.path.join(os.path.expanduser("~"), ".leantokens", "outputs")
+_ERRORISH = re.compile(r"error|exception|traceback|fail|warn|fatal|panic|assert", re.I)
+
+
+def _reference_runs(out, call_id, index):
+    """Replace runs of lines already shown in an earlier tool result with a reference.
+
+    index maps line text -> (call_id, line_no) for lines the model has already seen.
+    A run is only replaced when it is contiguous in both places, so the reference
+    points at one exact block. Lines are added to the index as they are sent.
+    """
+    lines = out.split("\n")
+    res, i = [], 0
+    while i < len(lines):
+        src = index.get(lines[i]) if len(lines[i].strip()) > 3 else None
+        j = i + 1
+        if src and src[0] != call_id:
+            while (j < len(lines) and index.get(lines[j]) == (src[0], src[1] + (j - i))):
+                j += 1
+        if src and src[0] != call_id and j - i >= REF_MIN_RUN:
+            res.append("[%d lines identical to lines %d-%d of tool call %s]"
+                       % (j - i, src[1] + 1, src[1] + j - i, src[0]))
+        else:
+            res.extend(lines[i:j])
+        i = j
+    for n, line in enumerate(res):
+        if len(line.strip()) > 3:
+            index.setdefault(line, (call_id, n))
+    return "\n".join(res)
+
+
+def _expandable(text):
+    """Shorten a very long output to its start, end and error lines.
+
+    The full text is saved under ~/.leantokens/outputs so the agent can read any
+    part of it with `leantokens show ID --lines A-B`.
+    """
+    lines = text.split("\n")
+    if len(lines) <= BIG_LINES:
+        return text
+    blob = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:12]
+    try:
+        os.makedirs(BLOB_DIR, exist_ok=True)
+        path = os.path.join(BLOB_DIR, blob + ".txt")
+        if not os.path.exists(path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+    except OSError:
+        return text
+    head, tail = 80, 40
+    middle = [(n, l) for n, l in enumerate(lines[head:-tail], head) if _ERRORISH.search(l)][:40]
+    out = lines[:head]
+    out.append("[leantokens: %d of %d lines omitted. Error-like lines from the omitted part follow. "
+               "To read any part, run: leantokens show %s --lines A-B]" % (len(lines) - head - tail, len(lines), blob))
+    out += ["%d: %s" % (n + 1, l) for n, l in middle]
+    out.append("[end of excerpt; last %d lines follow]" % tail)
+    return "\n".join(out + lines[-tail:])
+
+
+def _is_json(text):
+    if text.lstrip()[:1] not in ("{", "["):
+        return False
+    try:
+        json.loads(text)
+        return True
+    except ValueError:
+        return False
+
+
+def compress_request(body, lossy=False, smart=False):
     """Compress tool results inside an Anthropic or OpenAI request body, in place.
 
-    1. Each tool result is compressed (see compress_tool).
-    2. A result identical to an earlier one in the same conversation is replaced
-       by a pointer to that earlier call. Earlier turns never change, so prompt
-       caches keep hitting.
+    Default (lossless):
+      1. Each tool result is compressed (see compress_tool).
+      2. A result identical to an earlier one is replaced by a pointer to it.
+    smart=True adds:
+      3. Runs of 6+ lines already shown in an earlier result become a reference
+         to those exact lines (agents re-open the same files constantly).
+      4. Outputs over 400 lines keep start, end and error lines; the rest is
+         saved locally and readable with `leantokens show`.
+    lossy=True also shortens runs of near-identical log lines.
 
-    Returns (chars_before, chars_after). User and system text is left alone.
+    Earlier turns never change and the output is deterministic, so prompt caches
+    keep hitting. Returns (chars_before, chars_after). User text is untouched.
     """
     stats = [0, 0]
     seen = {}
+    index = {}
 
     for holder, key, call_id in _tool_results(body):
         def fn(t, call_id=call_id):
@@ -353,11 +431,37 @@ def compress_request(body, lossy=False):
                     out = pointer
                 else:
                     seen.setdefault(h, call_id)
+                    if smart and not _is_json(out):
+                        out = _reference_runs(_expandable(out), call_id, index)
             stats[0] += len(t)
             stats[1] += len(out)
             return out
         holder[key] = _tool_text(holder.get(key), fn)
     return stats[0], stats[1]
+
+
+def add_cache_control(body):
+    """Anthropic only: mark the system prompt and the conversation so far as cacheable.
+
+    Skipped when the request already sets cache_control anywhere. Cache writes cost
+    25% more than normal input and reads cost 10%, so this pays off when the same
+    conversation is sent again (agents, chat apps), not for one-off requests.
+    Returns True if markers were added.
+    """
+    if '"cache_control"' in json.dumps(body) or not body.get("messages"):
+        return False
+    mark = {"type": "ephemeral"}
+    sys_ = body.get("system")
+    if isinstance(sys_, str) and sys_:
+        body["system"] = [{"type": "text", "text": sys_, "cache_control": mark}]
+    elif isinstance(sys_, list) and sys_ and isinstance(sys_[-1], dict):
+        sys_[-1]["cache_control"] = mark
+    last = body["messages"][-1]
+    if isinstance(last.get("content"), str) and last["content"]:
+        last["content"] = [{"type": "text", "text": last["content"]}]
+    if isinstance(last.get("content"), list) and last["content"] and isinstance(last["content"][-1], dict):
+        last["content"][-1]["cache_control"] = dict(mark)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -450,7 +554,7 @@ def _save_recording(folder, provider, path, headers, body):
         pass
 
 
-def make_handler(upstream=None, log=None, lossy=False, record=None):
+def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False, cache=False):
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -471,8 +575,9 @@ def make_handler(upstream=None, log=None, lossy=False, record=None):
             if is_json:
                 try:
                     data = json.loads(body)
-                    before, after = compress_request(data, lossy)
-                    if before > after:
+                    before, after = compress_request(data, lossy, smart)
+                    cached = cache and provider == "anthropic" and add_cache_control(data)
+                    if before > after or cached:
                         body = json.dumps(data, ensure_ascii=False).encode()
                     if before:
                         row = {"t": int(time.time()), "p": provider, "b": before, "a": after,
@@ -532,8 +637,9 @@ def make_handler(upstream=None, log=None, lossy=False, record=None):
     return Handler
 
 
-def start_proxy(port=0, upstream=None, log=None, lossy=False, record=None):
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), make_handler(upstream, log, lossy, record))
+def start_proxy(port=0, upstream=None, log=None, lossy=False, record=None, smart=False, cache=False):
+    handler = make_handler(upstream, log, lossy, record, smart, cache)
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -593,6 +699,8 @@ def _option(args, name):
 
 def cmd_wrap(argv, upstream=None):
     lossy, argv = _flag(argv, "--lossy")
+    smart, argv = _flag(argv, "--smart")
+    cache, argv = _flag(argv, "--cache")
     record, argv = _option(argv, "--record")
     if not argv:
         print(USAGE, file=sys.stderr)
@@ -600,7 +708,7 @@ def cmd_wrap(argv, upstream=None):
     agent, args = argv[0], argv[1:]
     rows = []
     srv = start_proxy(upstream=upstream, log=rows.append, lossy=lossy or bool(os.environ.get("LEANTOKENS_LOSSY")),
-                      record=record)
+                      record=record, smart=smart or bool(os.environ.get("LEANTOKENS_SMART")), cache=cache)
     url = "http://127.0.0.1:%d" % srv.server_address[1]
     var, suffix = AGENTS.get(agent, ("OPENAI_BASE_URL", "/v1"))
     env = dict(os.environ)
@@ -707,6 +815,7 @@ def cmd_eval(argv):
                     help="only count tokens (free on Anthropic); don't generate answers")
     ap.add_argument("--limit", type=int, default=50, help="max requests to replay (default 50)")
     ap.add_argument("--lossy", action="store_true", help="evaluate lossy mode")
+    ap.add_argument("--smart", action="store_true", help="evaluate smart mode")
     ap.add_argument("--max-tokens", type=int, default=1024)
     a = ap.parse_args(argv)
 
@@ -721,7 +830,7 @@ def cmd_eval(argv):
         rec = json.load(open(os.path.join(a.folder, name)))
         p, path, orig = rec["provider"], rec["path"], rec["body"]
         comp = json.loads(json.dumps(orig))
-        compress_request(comp, a.lossy)
+        compress_request(comp, a.lossy, a.smart)
         try:
             if p == "anthropic":
                 keys = ("model", "system", "messages", "tools", "tool_choice", "thinking")
@@ -764,6 +873,31 @@ def cmd_eval(argv):
     return 0
 
 
+def cmd_show(argv):
+    ap = argparse.ArgumentParser(prog="leantokens show", description="Print an output that --smart shortened.")
+    ap.add_argument("id", help="the ID from the [leantokens: ... omitted] note")
+    ap.add_argument("--lines", help="line range, e.g. 120-180")
+    a = ap.parse_args(argv)
+    if not re.fullmatch(r"[0-9a-f]{12}", a.id):
+        print("leantokens: not a valid output ID: %s" % a.id, file=sys.stderr)
+        return 2
+    try:
+        lines = open(os.path.join(BLOB_DIR, a.id + ".txt"), encoding="utf-8").read().split("\n")
+    except OSError:
+        print("leantokens: no saved output with ID %s" % a.id, file=sys.stderr)
+        return 1
+    lo, hi = 1, len(lines)
+    if a.lines:
+        m = re.fullmatch(r"(\d+)-(\d+)", a.lines)
+        if not m:
+            print("leantokens: --lines must look like 120-180", file=sys.stderr)
+            return 2
+        lo, hi = max(1, int(m.group(1))), min(len(lines), int(m.group(2)))
+    for n in range(lo, hi + 1):
+        print("%d: %s" % (n, lines[n - 1]))
+    return 0
+
+
 USAGE = """usage:
   leantokens wrap claude [args...]       run Claude Code through the compressor
   leantokens wrap codex [args...]        run OpenAI Codex CLI (API key auth)
@@ -771,10 +905,15 @@ USAGE = """usage:
   leantokens proxy [--port 8787]         run the proxy for any app or SDK
   leantokens stats                       real billed tokens and estimated savings
   leantokens eval FOLDER [--tokens-only] replay recorded requests, compare savings and answers
+  leantokens show ID [--lines A-B]       print an output that --smart shortened
   leantokens prompt.txt [-l high]        compress a prompt file (- for stdin)
 
 wrap and proxy options:
+  --smart           also reference lines already shown earlier (re-opened files) and
+                    shorten outputs over 400 lines; the full text stays readable with
+                    `leantokens show ID --lines A-B`
   --lossy           also shorten runs of near-identical log lines (keeps first and last)
+  --cache           Anthropic: add prompt-caching markers when an app doesn't set any
   --record FOLDER   save original requests (no API keys) for `leantokens eval`
 """
 
@@ -790,18 +929,22 @@ def main(argv=None):
         return cmd_stats()
     if argv and argv[0] == "eval":
         return cmd_eval(argv[1:])
+    if argv and argv[0] == "show":
+        return cmd_show(argv[1:])
     if argv and argv[0] == "proxy":
         ap = argparse.ArgumentParser(prog="leantokens proxy")
         ap.add_argument("--port", type=int, default=8787)
         ap.add_argument("--upstream", help="send everything to this base URL instead")
         ap.add_argument("--lossy", action="store_true", help="also shorten runs of near-identical log lines")
+        ap.add_argument("--smart", action="store_true", help="reference repeated lines, shorten huge outputs")
+        ap.add_argument("--cache", action="store_true", help="add Anthropic prompt-caching markers")
         ap.add_argument("--record", metavar="FOLDER", help="save original requests for `leantokens eval`")
         a = ap.parse_args(argv[1:])
 
         def log(row):
             print("[%s] %s" % (row["p"], _fmt_summary(summarize([row]))), file=sys.stderr, flush=True)
 
-        srv = start_proxy(a.port, a.upstream, log, a.lossy, a.record)
+        srv = start_proxy(a.port, a.upstream, log, a.lossy, a.record, a.smart, a.cache)
         url = "http://127.0.0.1:%d" % srv.server_address[1]
         print("leantokens proxy on %s\n  Anthropic: ANTHROPIC_BASE_URL=%s\n  OpenAI:    OPENAI_BASE_URL=%s/v1"
               % (url, url, url), file=sys.stderr, flush=True)

@@ -17,22 +17,26 @@ leantokens wrap claude
 | The same tool output seen again in a conversation | Replaced by `[Same output as tool call X above.]` | Yes, the earlier copy is still in context |
 | Logs and command output | Repeated lines collapse to one line with `[xN]`, color codes and trailing spaces removed | Yes, apart from color codes |
 | File reads | Line-number padding trimmed | Yes |
+| Runs of 6+ lines already shown earlier, e.g. a file re-opened after an edit (`--smart`) | Replaced by `[N lines identical to lines A-B of tool call X]` | Yes, the lines are still in context |
+| Outputs over 400 lines (`--smart`) | Start, end and error lines kept; the full text is saved locally and the agent can read any part with `leantokens show ID --lines A-B` | Recoverable on demand |
 | Runs of near-identical log lines (`--lossy` only) | First and last line kept, middle replaced by `... [N similar lines omitted]` | No |
 | Your messages and system prompt | Untouched | n/a |
 
 Compression is deterministic and never changes earlier turns, so Anthropic and OpenAI prompt caching keeps hitting.
 
-### Measured
+### Measured on real agent sessions
 
-A simulated agent session (a 150-line file read twice, a 60-row API result twice, 120 lines of worker logs, a test run twice), counted with `tiktoken`:
+200 public SWE-agent sessions (5,463 API requests) where an agent fixes real GitHub issues by opening files, searching, editing and running tests. Counted with `tiktoken`; reproduce with `python3 bench/bench_traces.py`.
 
-| | Tokens | Saved |
-|---|---|---|
-| Original | 18,466 | |
-| leantokens | 7,304 | 60% |
-| leantokens `--lossy` | 3,987 | 78% |
+| Mode | Final context | Total session input | Median session |
+|---|---|---|---|
+| leantokens | 13.9% smaller | 10.8% smaller | 2.7% |
+| `--smart` | 24.3% smaller | 17.0% smaller | 15.6% |
+| `--smart --lossy` | 24.8% smaller | 17.4% smaller | 16.3% |
 
-Your savings depend on the session. JSON-heavy, log-heavy and repetitive work saves the most. Sessions that mostly read new source code save little, because code is left as written.
+Most of the gain comes from agents re-opening files they have already seen: 65% of tool-output tokens in these sessions are file views, and half of all tool-output lines repeat lines shown earlier. JSON-heavy and log-heavy work (API calls, CI output) saves much more; in a synthetic session of that kind, default mode saved 60%.
+
+`--smart` keeps every line the model saw available in context or on disk, but it changes how the agent sees repeated content. Until you have run `leantokens eval` on your own work, treat it as something to measure, not a guaranteed same-result setting.
 
 ## Check it on your own work
 
@@ -52,6 +56,7 @@ leantokens eval ~/lt-rec                     # also asks the model both ways and
 
 ```bash
 leantokens wrap claude            # Claude Code
+leantokens wrap --smart claude    # biggest savings: references repeated lines, shortens huge outputs
 leantokens wrap --lossy claude    # also shorten near-identical log lines
 leantokens wrap codex             # Codex CLI (API key login)
 leantokens wrap aider             # Aider
@@ -67,7 +72,7 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
 ```
 
-API keys pass straight through to the provider and are never stored. If `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` is already set when the proxy starts, it forwards there instead of the public API, so company gateways keep working.
+API keys pass straight through to the provider and are never stored. Add `--cache` to have the proxy add Anthropic prompt-caching markers for apps that do not set any. Repeated context then costs about 10% of the normal input price, but a request that is never repeated costs 25% more, so use it for chat apps and agents, not one-off calls. If `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` is already set when the proxy starts, it forwards there instead of the public API, so company gateways keep working.
 
 ### Compress a prompt
 
