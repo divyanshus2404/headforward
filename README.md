@@ -13,22 +13,50 @@ leantokens wrap claude
 
 | Input | What happens | Lossless? |
 |---|---|---|
-| JSON lists of same-shaped objects | Keys written once, values as rows (`{"_cols": [...], "_rows": [...]}`) | Yes |
+| JSON lists of same-shaped objects | Keys written once, values as rows; columns with one value for every row are stated once (`{"_cols", "_rows", "_same"}`) | Yes, `expand()` rebuilds the original exactly |
+| The same tool output seen again in a conversation | Replaced by `[Same output as tool call X above.]` | Yes, the earlier copy is still in context |
 | Logs and command output | Repeated lines collapse to one line with `[xN]`, color codes and trailing spaces removed | Yes, apart from color codes |
 | File reads | Line-number padding trimmed | Yes |
+| Runs of near-identical log lines (`--lossy` only) | First and last line kept, middle replaced by `... [N similar lines omitted]` | No |
 | Your messages and system prompt | Untouched | n/a |
 
-Compression is deterministic: the same tool output always becomes the same bytes, so Anthropic and OpenAI prompt caching still hits on earlier turns.
+Compression is deterministic and never changes earlier turns, so Anthropic and OpenAI prompt caching keeps hitting.
 
-In a test request with a 40-row JSON result and a 31-line log, tool output went from about 1,164 to 329 tokens (72% fewer). Savings depend on the session. JSON-heavy and log-heavy work saves the most, and sessions that mostly read source code save little.
+### Measured
+
+A simulated agent session (a 150-line file read twice, a 60-row API result twice, 120 lines of worker logs, a test run twice), counted with `tiktoken`:
+
+| | Tokens | Saved |
+|---|---|---|
+| Original | 18,466 | |
+| leantokens | 7,304 | 60% |
+| leantokens `--lossy` | 3,987 | 78% |
+
+Your savings depend on the session. JSON-heavy, log-heavy and repetitive work saves the most. Sessions that mostly read new source code save little, because code is left as written.
+
+## Check it on your own work
+
+`leantokens stats` reports what the provider actually billed (input, cache hits, output) and the tokens saved, converted at your real billed rate.
+
+To check that answers don't change, record real requests and replay them with and without compression:
+
+```bash
+leantokens wrap --record ~/lt-rec claude     # work as usual; requests are saved without API keys
+leantokens eval ~/lt-rec --tokens-only       # exact token savings (free on Anthropic, uses count_tokens)
+leantokens eval ~/lt-rec                     # also asks the model both ways and compares the answers
+```
+
+`eval` needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, and the full run costs about two API calls per recording. Recordings contain your conversation, so they stay on your machine; delete the folder when done.
 
 ## Usage
 
 ```bash
 leantokens wrap claude            # Claude Code
+leantokens wrap --lossy claude    # also shorten near-identical log lines
 leantokens wrap codex             # Codex CLI (API key login)
 leantokens wrap aider             # Aider
-leantokens stats                  # tokens saved so far
+leantokens stats                  # billed tokens, cache hits, tokens saved
+leantokens eval ~/lt-rec          # replay recordings, compare savings and answers
 ```
 
 ### Proxy for your own app or SDK

@@ -88,7 +88,7 @@ main .in { padding-block: 64px 72px; display: grid; gap: 72px; }
 section { display: grid; gap: 20px; min-width: 0; }
 .head { display: grid; gap: 10px; }
 
-.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .facts div { background: var(--surface); padding: 20px; display: grid; gap: 8px; align-content: start; }
 .facts p { color: var(--muted); font-size: 0.95rem; }
 
@@ -188,9 +188,10 @@ details pre { margin: 0; padding: 0 16px 16px; max-height: 420px; overflow: auto
         <h2>Same answers, smaller context.</h2>
       </div>
       <div class="facts">
-        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once and the values as rows. Nothing is dropped.</p></div>
+        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once, the values as rows, and any value shared by every row just once. It rebuilds to the exact original.</p></div>
+        <div><h3>Repeats become pointers</h3><p>Agents re-read the same file and rerun the same tests. A tool result identical to an earlier one becomes a one-line pointer to it.</p></div>
         <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Terminal color codes, trailing spaces and runs of blank lines go.</p></div>
-        <div><h3>Prompt caching keeps working</h3><p>The same tool output always compresses to the same bytes, so Anthropic and OpenAI cache hits on earlier turns still land.</p></div>
+        <div><h3>Prompt caching keeps working</h3><p>The same tool output always compresses to the same bytes and earlier turns never change, so Anthropic and OpenAI cache hits still land.</p></div>
       </div>
     </section>
 
@@ -429,9 +430,16 @@ function tabulate(o) {
   if (Array.isArray(o)) {
     const items = o.map(tabulate);
     if (items.length >= 3 && items.every(v => v && typeof v === "object" && !Array.isArray(v))) {
-      const cols = Object.keys(items[0]);
-      if (items.every(v => { const k = Object.keys(v); return k.length === cols.length && k.every((c, i) => c === cols[i]); }))
-        return { _cols: cols, _rows: items.map(v => cols.map(c => v[c])) };
+      const keys = Object.keys(items[0]);
+      if (items.every(v => Object.keys(v).length === keys.length && keys.every(k => k in v))) {
+        const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+        const same = {};
+        for (const k of keys) if (items.slice(1).every(v => eq(v[k], items[0][k]))) same[k] = items[0][k];
+        const cols = keys.filter(k => !(k in same));
+        const table = { _cols: cols, _rows: items.map(v => cols.map(c => v[c])) };
+        if (Object.keys(same).length) table._same = same;
+        return table;
+      }
     }
     return items;
   }
@@ -443,7 +451,12 @@ function compressTool(text) {
   let s = text.replace(ANSI, "");
   const t = s.trim();
   if (t[0] === "{" || t[0] === "[") {
-    try { const out = JSON.stringify(tabulate(JSON.parse(t))); return out.length < text.length ? out : text; } catch (e) {}
+    try {
+      let data = JSON.parse(t);
+      if (!["_cols", "_rows", "_same"].some(r => t.includes('"' + r + '"'))) data = tabulate(data);
+      const out = JSON.stringify(data);
+      return out.length < text.length ? out : text;
+    } catch (e) {}
   }
   s = s.replace(LINE_NO, "$1$2");
   const lines = s.split("\n").map(l => l.trimEnd()), out = [];
