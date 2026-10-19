@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Docs · leantokens</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How to install and use leantokens with Claude Code, Codex, Aider and your own apps.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%232d4bd8%22/%3E%3Cpath d=%22M9 9v14h14%22 stroke=%22white%22 stroke-width=%223.5%22 fill=%22none%22/%3E%3C/svg%3E">
+</head>
+<body>
+<nav class="topnav"><div class="in"><a class="logo" href="/">leantokens</a><div class="links"><a href="/docs/" aria-current="page">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/leantokens">GitHub</a></div></div></nav>
+
+<div class="in docs">
+  <nav class="toc" aria-label="On this page">
+    <b>Start</b>
+    <a href="#install">Install</a>
+    <a href="#quickstart">Quick start</a>
+    <b>Use it</b>
+    <a href="#agents">Coding agents</a>
+    <a href="#proxy">Proxy for your app</a>
+    <a href="#prompts">Prompt compression</a>
+    <b>Measure</b>
+    <a href="#stats">Savings and billing</a>
+    <a href="#eval">Check answers don't change</a>
+    <b>Reference</b>
+    <a href="#how">How compression works</a>
+    <a href="#cli">CLI reference</a>
+    <a href="#privacy">Privacy and safety</a>
+    <a href="#limits">Limits</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+
+  <article class="doc">
+    <h1>leantokens documentation</h1>
+    <p>leantokens runs a small proxy on your computer between a coding agent and the model. It shrinks tool output (JSON, logs, file reads, repeated results) before it is sent, so every turn costs fewer input tokens. Your own messages are never changed.</p>
+
+    <h2 id="install">Install</h2>
+    <p>Requires Python 3.9 or newer on macOS, Linux or Windows. There are no other dependencies.</p>
+    <pre>pip install git+https://github.com/divyanshus2404/leantokens</pre>
+    <p>Optional, for exact token counts instead of estimates:</p>
+    <pre>pip install tiktoken</pre>
+    <p class="callout">No pip? leantokens is one file. Save <a href="/leantokens.py">leantokens.py</a> and run <code>python3 leantokens.py</code> wherever these docs say <code>leantokens</code>.</p>
+
+    <h2 id="quickstart">Quick start</h2>
+    <ol>
+      <li>Open a terminal in your project folder.</li>
+      <li>Start your agent through leantokens:
+        <pre>leantokens wrap claude</pre></li>
+      <li>Work as usual. When you exit, leantokens prints what you were billed and how much it saved.</li>
+      <li>See running totals any time:
+        <pre>leantokens stats</pre></li>
+    </ol>
+
+    <h2 id="agents">Coding agents</h2>
+    <p><code>wrap</code> starts a private proxy on a random local port, launches the agent pointed at it, and shuts the proxy down when the agent exits.</p>
+    <div class="tbl"><table>
+      <tr><th>Agent</th><th>Command</th><th>Notes</th></tr>
+      <tr><td>Claude Code</td><td><code>leantokens wrap claude</code></td><td>Sign in to Claude Code once with <code>/login</code>, or set <code>ANTHROPIC_API_KEY</code>.</td></tr>
+      <tr><td>OpenAI Codex CLI</td><td><code>leantokens wrap codex</code></td><td>Use an API key login. A ChatGPT-account login talks to ChatGPT's servers and bypasses the proxy.</td></tr>
+      <tr><td>Aider</td><td><code>leantokens wrap aider</code></td><td>Works with OpenAI and Anthropic models.</td></tr>
+    </table></div>
+    <p>Anything after the agent name is passed to the agent, for example <code>leantokens wrap claude --continue</code>.</p>
+
+    <h2 id="proxy">Proxy for your own app</h2>
+    <p>Run the proxy, then point your SDK at it with its base URL setting.</p>
+    <pre>leantokens proxy --port 8787
+
+# in your app's environment
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+export OPENAI_BASE_URL=http://127.0.0.1:8787/v1</pre>
+    <p>Supported request formats: Anthropic Messages, OpenAI Chat Completions and OpenAI Responses. Streaming responses pass through as they arrive.</p>
+    <p>If <code>ANTHROPIC_BASE_URL</code> or <code>OPENAI_BASE_URL</code> is already set when the proxy starts, it forwards there instead of the public API, so company gateways keep working. To force a destination, use <code>--upstream URL</code>.</p>
+
+    <h2 id="prompts">Prompt compression</h2>
+    <p>For text you paste into a chat app. It removes filler, greetings, sign-offs, wordy phrases and repeated sentences. Code is never rewritten.</p>
+    <pre># macOS: compress your clipboard and put it back
+pbpaste | leantokens - -l high | pbcopy
+
+# a file
+leantokens prompt.txt -l high</pre>
+    <div class="tbl"><table>
+      <tr><th>Level</th><th>What it removes</th></tr>
+      <tr><td><code>light</code></td><td>Extra spaces and blank lines.</td></tr>
+      <tr><td><code>medium</code></td><td>Plus filler words, wordy phrases, greetings, sign-offs and repeated sentences. The default.</td></tr>
+      <tr><td><code>high</code></td><td>Plus articles, hedges such as "I think", bold markers; JSON code blocks are minified.</td></tr>
+      <tr><td><code>max</code></td><td>Plus comment-only lines and blank lines inside code blocks.</td></tr>
+    </table></div>
+    <p>To apply the tool-output rules to a file instead, use <code>--tool</code>: <code>leantokens api.json --tool</code>.</p>
+
+    <h2 id="stats">Savings and billing</h2>
+    <p>The proxy reads the usage numbers the provider returns with every response: input tokens, cache reads and output tokens. <code>leantokens stats</code> shows those billed totals for the last 24 hours and all time, plus tokens saved. Savings are converted from characters removed at the token rate you were actually billed for those requests.</p>
+    <pre>$ leantokens stats
+Last 24 hours     212 requests  1,830,114 input tokens billed, ~402,770 saved (18% less input), cache hits 91%, 48,210 output</pre>
+    <p class="callout">The numbers above are an illustration of the format, not a measurement.</p>
+    <p>Stats are stored locally in <code>~/.leantokens/stats.jsonl</code>.</p>
+
+    <h2 id="eval">Check answers don't change</h2>
+    <p>Record real requests while you work, then replay each one to the model with and without compression and compare what comes back.</p>
+    <pre>leantokens wrap --record ~/lt-rec claude   # work as usual
+leantokens eval ~/lt-rec --tokens-only     # exact token savings only
+leantokens eval ~/lt-rec                   # also compare the model's answers</pre>
+    <ul>
+      <li><code>--tokens-only</code> uses Anthropic's free token-counting endpoint, so it costs nothing on Anthropic recordings.</li>
+      <li>A full run makes two model calls per recording, capped at <code>--max-tokens</code> (default 1024) each.</li>
+      <li>Answers are compared by the tool call the model chooses, or by text similarity when there is no tool call.</li>
+      <li>Models are not perfectly repeatable. Run the same recordings with compression off to see your baseline rate of "different" answers.</li>
+      <li>Requires <code>ANTHROPIC_API_KEY</code> or <code>OPENAI_API_KEY</code>.</li>
+    </ul>
+
+    <h2 id="how">How compression works</h2>
+    <p>leantokens only rewrites <strong>tool results</strong>. System prompts and your messages reach the model unchanged.</p>
+    <div class="tbl"><table>
+      <tr><th>Input</th><th>What happens</th><th>Lossless?</th></tr>
+      <tr><td>JSON lists of same-shaped objects</td><td>Keys are written once and values as rows. A column with one value in every row is stated once.</td><td>Yes. The original can be rebuilt exactly.</td></tr>
+      <tr><td>A tool result identical to an earlier one</td><td>Replaced by <code>[Same output as tool call X above.]</code></td><td>Yes. The earlier copy is still in context.</td></tr>
+      <tr><td>Logs and command output</td><td>Repeated lines collapse to one line with a count. Terminal color codes and trailing spaces are removed.</td><td>Yes, apart from color codes.</td></tr>
+      <tr><td>File reads</td><td>Line-number padding is trimmed.</td><td>Yes.</td></tr>
+      <tr><td>Runs of near-identical log lines (<code>--lossy</code> only)</td><td>First and last lines kept, the middle replaced by a count.</td><td>No.</td></tr>
+    </table></div>
+    <p>Here is a JSON result before and after:</p>
+    <pre>[{"id": 1, "status": "shipped", "total": 19.99},
+ {"id": 2, "status": "shipped", "total": 24.50},
+ {"id": 3, "status": "shipped", "total": 8.00}]
+
+{"_cols":["id","total"],"_rows":[[1,19.99],[2,24.5],[3,8.0]],"_same":{"status":"shipped"}}</pre>
+    <h3>Prompt caching</h3>
+    <p>Anthropic and OpenAI bill repeated prompt prefixes at a fraction of the normal rate. leantokens is deterministic and never rewrites earlier turns, so each request still starts with exactly the bytes of the previous one and cache hits keep landing.</p>
+
+    <h2 id="cli">CLI reference</h2>
+    <div class="tbl"><table>
+      <tr><th>Command</th><th>Options</th></tr>
+      <tr><td><code>leantokens wrap AGENT [args]</code></td><td><code>--lossy</code>, <code>--record FOLDER</code></td></tr>
+      <tr><td><code>leantokens proxy</code></td><td><code>--port N</code> (default 8787), <code>--upstream URL</code>, <code>--lossy</code>, <code>--record FOLDER</code></td></tr>
+      <tr><td><code>leantokens stats</code></td><td>none</td></tr>
+      <tr><td><code>leantokens eval FOLDER</code></td><td><code>--tokens-only</code>, <code>--limit N</code> (default 50), <code>--lossy</code>, <code>--max-tokens N</code></td></tr>
+      <tr><td><code>leantokens FILE</code> (or <code>-</code> for stdin)</td><td><code>-l, --level</code> light | medium | high | max; <code>-t, --tool</code>; <code>--lossy</code>; <code>-s, --stats</code>; <code>-q, --quiet</code>; <code>--model NAME</code></td></tr>
+    </table></div>
+    <div class="tbl"><table>
+      <tr><th>Option</th><th>Meaning</th></tr>
+      <tr><td><code>--lossy</code></td><td>Also shorten runs of near-identical log lines.</td></tr>
+      <tr><td><code>--record FOLDER</code></td><td>Save each original request, without API keys, for <code>eval</code>.</td></tr>
+      <tr><td><code>--upstream URL</code></td><td>Send all traffic to this base URL instead of the provider's API.</td></tr>
+      <tr><td><code>-s, --stats</code></td><td>Print only the savings line.</td></tr>
+      <tr><td><code>-q, --quiet</code></td><td>Don't print the savings line to stderr.</td></tr>
+      <tr><td><code>--model NAME</code></td><td>Which tiktoken encoding to count with (default <code>gpt-4o</code>).</td></tr>
+    </table></div>
+    <p>Environment variables: <code>LEANTOKENS_LOSSY=1</code> turns on lossy mode for <code>wrap</code>; <code>LEANTOKENS_UPSTREAM</code> sets the upstream for <code>wrap</code>.</p>
+
+    <h2 id="privacy">Privacy and safety</h2>
+    <ul>
+      <li>The proxy listens only on <code>127.0.0.1</code>, so other machines can't reach it.</li>
+      <li>API keys and sign-in tokens pass straight through to the provider and are never stored.</li>
+      <li><code>--record</code> saves request bodies, which contain your conversation, to the folder you choose. Authorization headers are removed. Delete the folder when you're done.</li>
+      <li>Stats contain only counts and timestamps.</li>
+    </ul>
+
+    <h2 id="limits">Limits</h2>
+    <ul>
+      <li>Savings depend on the work. JSON-heavy, log-heavy and repetitive sessions save the most. Sessions that mostly read new source code save little, because code is left as written.</li>
+      <li>Browser chat apps (claude.ai, chatgpt.com) can't be proxied. Use prompt compression and paste.</li>
+      <li>Codex signed in with a ChatGPT account bypasses the proxy. Use an API key.</li>
+    </ul>
+
+    <h2 id="troubleshooting">Troubleshooting</h2>
+    <h3>Claude Code says "Not logged in"</h3>
+    <p>The terminal version of Claude Code has its own sign-in, separate from the desktop app. Type <code>/login</code> inside Claude Code once. leantokens passes your sign-in through unchanged.</p>
+    <h3><code>leantokens: command not found</code></h3>
+    <p>The folder pip installs scripts into isn't on your PATH. Run <code>python3 -m pip show -f leantokens</code> to find it, or run the single file with <code>python3 leantokens.py</code>.</p>
+    <h3>No savings were recorded</h3>
+    <p>Check that the agent really used the proxy: <code>leantokens stats</code> counts only requests that went through it. Codex with a ChatGPT login and browser apps never do.</p>
+    <h3>A command with <code>!</code> hangs at <code>dquote&gt;</code></h3>
+    <p>In zsh, <code>!</code> inside double quotes is history expansion. Press Ctrl-C, then use single quotes: <code>echo 'Hello!' | leantokens -</code>.</p>
+  </article>
+</div>
+
+<footer class="site-foot"><div class="in"><span>leantokens · MIT license</span><a href="/">Home</a><a href="https://github.com/divyanshus2404/leantokens">Source on GitHub</a></div></footer>
+</body>
+</html>

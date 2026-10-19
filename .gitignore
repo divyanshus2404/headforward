@@ -6,3 +6,5 @@ dist/
 .DS_Store
 bench/data/
 private/
+web/.vercel/
+web/.env*
