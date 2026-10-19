@@ -28,6 +28,8 @@ import http.server
 import json
 import os
 import re
+import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -691,6 +693,15 @@ SECRET_HEADERS = {"authorization", "x-api-key", "api-key", "cookie", "openai-org
 MAX_CAPTURE = 8 * 1024 * 1024
 
 
+def _log_error(msg):
+    try:
+        os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
+        with open(os.path.join(os.path.dirname(STATS_FILE), "errors.log"), "a") as f:
+            f.write("%s %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), msg))
+    except OSError:
+        pass
+
+
 def _append_stats(row):
     try:
         os.makedirs(os.path.dirname(STATS_FILE), exist_ok=True)
@@ -743,6 +754,9 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
                                "req": len(body)}
                 except ValueError:
                     pass
+                except Exception as e:  # never break the agent: send the request unchanged
+                    _log_error("compression skipped for %s %s: %r" % (self.command, self.path, e))
+                    row = None
 
             headers = {k: v for k, v in self.headers.items() if k.lower() not in HOP}
             headers["Content-Length"] = str(len(body))
@@ -856,6 +870,28 @@ def _option(args, name):
     return None, args
 
 
+def _claude_signed_in(env):
+    """True, False, or None if unknown. Uses `claude auth status`, which is offline and free."""
+    if env.get("ANTHROPIC_API_KEY") or env.get("ANTHROPIC_AUTH_TOKEN"):
+        return True
+    try:
+        out = subprocess.run(["claude", "auth", "status"], capture_output=True, text=True, timeout=15, env=env)
+        return bool(json.loads(out.stdout).get("loggedIn"))
+    except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
+        return None
+
+
+def _run_agent(cmd, env):
+    """Run the agent in the foreground. Ctrl-C belongs to the agent (it cancels a
+    response in Claude Code), so leantokens ignores it until the agent exits."""
+    old = signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        proc = subprocess.Popen(cmd, env=env)
+        return proc.wait()
+    finally:
+        signal.signal(signal.SIGINT, old)
+
+
 def cmd_wrap(argv, upstream=None):
     lossy, argv = _flag(argv, "--lossy")
     smart, argv = _flag(argv, "--smart")
@@ -865,25 +901,43 @@ def cmd_wrap(argv, upstream=None):
         print(USAGE, file=sys.stderr)
         return 2
     agent, args = argv[0], argv[1:]
+    if not shutil.which(agent):
+        print("leantokens: '%s' is not installed or not on your PATH" % agent, file=sys.stderr)
+        return 127
+    smart = smart or bool(os.environ.get("LEANTOKENS_SMART"))
+    lossy = lossy or bool(os.environ.get("LEANTOKENS_LOSSY"))
+    env = dict(os.environ)
+
+    if agent == "claude" and _claude_signed_in(env) is False:
+        print("leantokens: Claude Code is not signed in on this computer. Type /login inside Claude Code\n"
+              "            once (or set ANTHROPIC_API_KEY); leantokens passes your sign-in through.",
+              file=sys.stderr)
+
     rows = []
-    srv = start_proxy(upstream=upstream, log=rows.append, lossy=lossy or bool(os.environ.get("LEANTOKENS_LOSSY")),
-                      record=record, smart=smart or bool(os.environ.get("LEANTOKENS_SMART")), cache=cache)
+    try:
+        srv = start_proxy(upstream=upstream, log=rows.append, lossy=lossy, record=record, smart=smart, cache=cache)
+    except OSError as e:
+        # Fail open: the agent still runs, just without compression.
+        print("leantokens: could not start the proxy (%s); running %s without compression" % (e, agent),
+              file=sys.stderr)
+        return _run_agent([agent] + args, env)
+
     url = "http://127.0.0.1:%d" % srv.server_address[1]
     var, suffix = AGENTS.get(agent, ("OPENAI_BASE_URL", "/v1"))
-    env = dict(os.environ)
     env[var] = url + suffix
     if agent == "aider":
         env["ANTHROPIC_BASE_URL"] = url
+    mode = " + ".join(m for m, on in (("smart", smart), ("lossy", lossy), ("cache", cache)) if on) or "lossless"
+    print("leantokens: compressing %s (%s). Savings print when it exits; `leantokens stats` for totals."
+          % (agent, mode), file=sys.stderr)
     try:
-        code = subprocess.call([agent] + args, env=env)
-    except FileNotFoundError:
-        print("leantokens: '%s' is not installed or not on your PATH" % agent, file=sys.stderr)
-        return 127
-    except KeyboardInterrupt:
-        code = 130
-    srv.shutdown()
+        code = _run_agent([agent] + args, env)
+    finally:
+        srv.shutdown()
     if rows:
         print("leantokens: this session %s" % _fmt_summary(summarize(rows)), file=sys.stderr)
+    else:
+        print("leantokens: no model requests went through the proxy this session.", file=sys.stderr)
     return code
 
 

@@ -386,5 +386,62 @@ class ProxyTests(unittest.TestCase):
         self.assertRegex(out, r"Answers: \d+ same \(of \d+\)")
 
 
+FAKE_CLAUDE = r'''#!%s
+import http.client, json, os, signal, sys, time, urllib.parse
+if sys.argv[1:3] == ["auth", "status"]:
+    print(json.dumps({"loggedIn": True}))
+    sys.exit(0)
+os.kill(os.getppid(), signal.SIGINT)  # the user presses Ctrl-C to cancel a response
+time.sleep(0.2)
+u = urllib.parse.urlsplit(os.environ["ANTHROPIC_BASE_URL"])
+c = http.client.HTTPConnection(u.hostname, u.port)
+logs = "\n".join(["INFO GET /health 200"] * 30)
+body = {"model": "m", "max_tokens": 5, "messages": [{"role": "user", "content": [
+    {"type": "tool_result", "tool_use_id": "a", "content": logs}]}]}
+c.request("POST", "/v1/messages", json.dumps(body), {"Content-Type": "application/json",
+          "Authorization": "Bearer user-oauth-token", "anthropic-version": "2023-06-01"})
+r = c.getresponse()
+r.read()
+sys.exit(0 if r.status == 200 else 3)
+'''
+
+
+@unittest.skipIf(os.name == "nt", "uses a POSIX stand-in for the claude command")
+class WrapTests(unittest.TestCase):
+    def test_wrap_end_to_end(self):
+        up = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeAPI)
+        threading.Thread(target=up.serve_forever, daemon=True).start()
+        with tempfile.TemporaryDirectory() as tmp:
+            agent = os.path.join(tmp, "claude")
+            with open(agent, "w") as f:
+                f.write(FAKE_CLAUDE % sys.executable)
+            os.chmod(agent, 0o755)
+            lt.STATS_FILE = os.path.join(tmp, "stats.jsonl")
+            old_path = os.environ["PATH"]
+            os.environ["PATH"] = tmp + os.pathsep + old_path
+            err = io.StringIO()
+            try:
+                from contextlib import redirect_stderr
+                with redirect_stderr(err):
+                    code = \
+                        lt.cmd_wrap(["--smart", "claude"], "http://127.0.0.1:%d" % up.server_address[1])
+            finally:
+                os.environ["PATH"] = old_path
+                up.shutdown()
+        self.assertEqual(code, 0, err.getvalue())  # survived Ctrl-C, request succeeded
+        self.assertEqual(FakeAPI.got["body"]["messages"][0]["content"][0]["content"],
+                         "INFO GET /health 200  [x30]")
+        self.assertIn("compressing claude (smart)", err.getvalue())
+        self.assertIn("this session", err.getvalue())
+        self.assertNotIn("not signed in", err.getvalue())
+
+    def test_missing_agent(self):
+        err = io.StringIO()
+        from contextlib import redirect_stderr
+        with redirect_stderr(err):
+            self.assertEqual(lt.cmd_wrap(["no-such-agent-xyz"]), 127)
+        self.assertIn("not installed", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()
