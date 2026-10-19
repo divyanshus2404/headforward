@@ -147,6 +147,17 @@ class SmartTests(unittest.TestCase):
         self.assertIn("[29 lines identical to lines 32-60 of tool call t0]", out)
         self.assertEqual(b["messages"][0]["content"][0]["content"], first)
 
+    def test_renumbered_lines_after_insert_still_match(self):
+        code = ["def handler_%d(event):" % i if i % 5 == 0 else "    value_%d = compute(event, %d)" % (i, i)
+                for i in range(1, 41)]
+        view = lambda ls: "[File: svc.py]\n" + "\n".join("%d:%s" % (n, l) for n, l in enumerate(ls, 1))
+        edited = code[:10] + ["    log(event)", "    audit(event)"] + code[10:]
+        b = self.body(view(code), view(edited))
+        lt.compress_request(b, smart=True)
+        out = b["messages"][1]["content"][0]["content"]
+        self.assertIn("11:    log(event)", out)
+        self.assertIn("[30 lines: same text as lines 12-41 of tool call t0, numbered 13-42 here]", out)
+
     def test_references_off_by_default(self):
         b = self.body("x\n" + FILE, "y\n" + FILE)
         lt.compress_request(b)
@@ -179,6 +190,41 @@ class SmartTests(unittest.TestCase):
         lt.compress_request(short, smart=True)
         lt.compress_request(longer, smart=True)
         self.assertEqual(short["messages"], longer["messages"][:2])
+
+
+class NoiseTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        lt.BLOB_DIR = self.tmp.name
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_pytest_keeps_failures_and_summary(self):
+        text = "\n".join(["tests/test_api.py::test_%d PASSED" % i for i in range(30)] +
+                         ["tests/test_api.py::test_login FAILED", "E   assert 401 == 200",
+                          "=== 1 failed, 30 passed in 2.10s ==="])
+        out = lt._filter_noise(text)
+        self.assertIn("[30 passing test lines omitted; full output: leantokens show ", out)
+        self.assertIn("test_login FAILED", out)
+        self.assertIn("E   assert 401 == 200", out)
+        self.assertIn("1 failed, 30 passed", out)
+
+    def test_pip_noise_collapses_but_errors_stay(self):
+        text = "\n".join(["Collecting pkg%d" % i for i in range(10)] +
+                         ["ERROR: Could not find a version that satisfies the requirement nopkg"])
+        out = lt._filter_noise(text)
+        self.assertIn("[10 package install lines omitted", out)
+        self.assertIn("ERROR: Could not find a version", out)
+
+    def test_full_output_recoverable(self):
+        text = "\n".join("Compiling crate%d v0.%d.0" % (i, i) for i in range(12)) + "\nerror[E0425]: cannot find value"
+        out = lt._filter_noise(text)
+        blob = lt.re.search(r"show ([0-9a-f]{12})", out).group(1)
+        self.assertEqual(open(os.path.join(self.tmp.name, blob + ".txt")).read(), text)
+
+    def test_plain_code_untouched(self):
+        self.assertEqual(lt._filter_noise(FILE), FILE)
 
 
 class CacheTests(unittest.TestCase):

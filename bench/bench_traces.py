@@ -114,5 +114,59 @@ def main():
         print("  %-18s median %5.1f%%   10th pct %5.1f%%   90th pct %5.1f%%" % (m, q(0.5), q(0.1), q(0.9)))
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and "--verify" not in sys.argv:
     main()
+
+
+REF = __import__("re").compile(r"^\[(\d+) lines(?: identical to|: same text as) lines (\d+)-(\d+) of (.+?)(?:, numbered (\d+)-(\d+) here)?\]$")
+
+
+def verify(sessions):
+    """Check every reference --smart creates points at exactly the lines it replaced."""
+    import tempfile
+    lt.BLOB_DIR = tempfile.mkdtemp()
+    refs = bad = 0
+    for traj in sessions:
+        reqs = to_requests(traj)
+        if not reqs:
+            continue
+        orig = reqs[-1]
+        comp = copy.deepcopy(orig)
+        lt.compress_request(comp, smart=True)
+        sent = {}       # label -> lines as sent
+        wrote = {}
+        n = 0
+        o_res = [e for e in lt._walk(orig) if e[0] == "result"]
+        c_events = list(lt._walk(comp))
+        oi = 0
+        for e in c_events:
+            if e[0] == "wrote":
+                wrote[e[1]] = e[2].split("\n")
+                continue
+            _, holder, key, cid = e
+            text = holder[key]
+            truth = lt.compress_tool(o_res[oi][1][o_res[oi][2]])
+            oi += 1
+            label = "tool call %s" % cid
+            lines = text.split("\n")
+            rebuilt = []
+            for line in lines:
+                m = REF.match(line)
+                if not m:
+                    rebuilt.append(line)
+                    continue
+                refs += 1
+                cnt, a, b, src = int(m.group(1)), int(m.group(2)), int(m.group(3)), m.group(4)
+                pool = sent.get(src) or wrote.get(src) or []
+                rebuilt += [lt._key(x) for x in pool[a - 1:b]]
+            sent[label] = lines
+            want = [lt._key(x) for x in truth.split("\n")]
+            got = [lt._key(x) for x in rebuilt]
+            if "omitted" not in text and "[Same output" not in text and got != want:
+                bad += 1
+    print("verified %d references across %d sessions: %d outputs failed to rebuild" % (refs, len(sessions), bad))
+    return bad
+
+
+if __name__ == "__main__" and "--verify" in sys.argv:
+    sys.exit(1 if verify([s for s in fetch(200, 0) if s]) else 0)

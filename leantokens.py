@@ -312,55 +312,208 @@ def _tool_text(content, fn):
     return content
 
 
-def _tool_results(body):
-    """Yield (container, key, call_id) for every tool result, in conversation order."""
-    for m in body.get("messages") or []:
-        if not isinstance(m, dict):
-            continue
-        if m.get("role") == "tool":  # OpenAI chat completions
-            yield m, "content", m.get("tool_call_id")
-        elif isinstance(m.get("content"), list):  # Anthropic
+def _assistant_texts(m):
+    """Yield (label, text) for what the agent itself wrote in one message or item."""
+    calls = []
+    content = m.get("content")
+    if isinstance(content, str):
+        yield None, content
+    elif isinstance(content, list):
+        for b in content:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") in ("text", "output_text"):
+                yield None, b.get("text") or ""
+            elif b.get("type") == "tool_use":
+                calls.append((b.get("id"), b.get("input")))
+    for tc in m.get("tool_calls") or []:  # OpenAI chat completions
+        try:
+            calls.append((tc.get("id"), json.loads(tc["function"].get("arguments") or "{}")))
+        except (KeyError, TypeError, ValueError):
+            pass
+    if m.get("type") == "function_call":  # OpenAI Responses API
+        try:
+            calls.append((m.get("call_id"), json.loads(m.get("arguments") or "{}")))
+        except (TypeError, ValueError):
+            pass
+    for call_id, args in calls:
+        for v in (args.values() if isinstance(args, dict) else [args]):
+            if isinstance(v, str) and "\n" in v:
+                yield "your input to tool call %s" % call_id, v
+
+
+def _walk(body):
+    """Yield ("result", holder, key, call_id) and ("wrote", label, text) in conversation order."""
+    n = 0
+    seq = [m for m in body.get("messages") or [] if isinstance(m, dict)]
+    seq += [it for it in body.get("input") or [] if isinstance(it, dict)] if isinstance(body.get("input"), list) else []
+    for m in seq:
+        if m.get("role") == "assistant" or m.get("type") == "function_call":
+            n += 1
+            for label, text in _assistant_texts(m):
+                yield "wrote", label or "your message #%d" % n, text
+        elif m.get("role") == "tool":
+            yield "result", m, "content", m.get("tool_call_id")
+        elif m.get("type") in ("function_call_output", "custom_tool_call_output"):
+            yield "result", m, "output", m.get("call_id")
+        elif isinstance(m.get("content"), list):
             for block in m["content"]:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
-                    yield block, "content", block.get("tool_use_id")
-    items = body.get("input")
-    if isinstance(items, list):  # OpenAI Responses API
-        for it in items:
-            if isinstance(it, dict) and it.get("type") in ("function_call_output", "custom_tool_call_output"):
-                yield it, "output", it.get("call_id")
+                    yield "result", block, "content", block.get("tool_use_id")
 
 
-REF_MIN_RUN = 6          # shortest run of repeated lines worth a reference
+REF_MIN_RUN = 3          # shortest run of repeated lines worth a reference
+REF_MIN_CHARS = 220      # ...and only when the run is ~2.5x longer than the reference
 BIG_LINES = 400          # outputs longer than this become expandable in smart mode
 BLOB_DIR = os.path.join(os.path.expanduser("~"), ".leantokens", "outputs")
 _ERRORISH = re.compile(r"error|exception|traceback|fail|warn|fatal|panic|assert", re.I)
 
 
-def _reference_runs(out, call_id, index):
-    """Replace runs of lines already shown in an earlier tool result with a reference.
+# Line-number prefixes used by agents' file viewers: "12:code", "  12\tcode", "12→code", "12|code".
+_NUM_PREFIX = re.compile(r"^\s*(\d+)\s*[:\t\u2192|]\s?")
+MAX_SOURCES = 16  # remembered positions per line text; bounds memory and work
+_REF_LINE = re.compile(r"^\[\d+ lines[ :]")
 
-    index maps line text -> (call_id, line_no) for lines the model has already seen.
-    A run is only replaced when it is contiguous in both places, so the reference
-    points at one exact block. Lines are added to the index as they are sent.
+
+def _key(line):
+    """What a line says, ignoring its line number and trailing spaces."""
+    return _NUM_PREFIX.sub("", line, count=1).rstrip()
+
+
+class Shadow:
+    """The model's view of a conversation: every tool-output line it has been sent.
+
+    Lines are stored by position (call_id, line_no) and indexed by content with
+    line numbers removed, so a file re-shown after an edit still matches even
+    though every line below the edit was renumbered.
+    """
+
+    def __init__(self):
+        self.sent = {}    # (call_id, line_no) -> key
+        self.raw = {}     # (call_id, line_no) -> line exactly as sent
+        self.where = {}   # key -> [(call_id, line_no), ...]
+
+    def add(self, call_id, lines):
+        for n, line in enumerate(lines):
+            if _REF_LINE.match(line):
+                continue  # never index our own references
+            k = _key(line)
+            self.sent[(call_id, n)] = k
+            self.raw[(call_id, n)] = line
+            if len(k.strip()) > 3:
+                spots = self.where.setdefault(k, [])
+                if len(spots) < MAX_SOURCES:
+                    spots.append((call_id, n))
+
+    def longest_match(self, lines, i, call_id):
+        """Longest run starting at lines[i] that the model already saw contiguously."""
+        best = (0, None, None)
+        for c, p in self.where.get(_key(lines[i]), ()):
+            if c == call_id:
+                continue
+            j = i + 1
+            while j < len(lines) and self.sent.get((c, p + j - i)) == _key(lines[j]):
+                j += 1
+            if j - i > best[0]:
+                best = (j - i, c, p)
+        return best
+
+
+def _reference_runs(out, label, shadow):
+    """Replace runs of lines the model already saw with a pointer to them.
+
+    Matching ignores line-number prefixes. When the numbers changed (lines moved
+    after an edit), the reference says what they are numbered now, so the model
+    can still cite exact line numbers.
     """
     lines = out.split("\n")
     res, i = [], 0
     while i < len(lines):
-        src = index.get(lines[i]) if len(lines[i].strip()) > 3 else None
-        j = i + 1
-        if src and src[0] != call_id:
-            while (j < len(lines) and index.get(lines[j]) == (src[0], src[1] + (j - i))):
-                j += 1
-        if src and src[0] != call_id and j - i >= REF_MIN_RUN:
-            res.append("[%d lines identical to lines %d-%d of tool call %s]"
-                       % (j - i, src[1] + 1, src[1] + j - i, src[0]))
+        k = _key(lines[i])
+        n, src, pos = shadow.longest_match(lines, i, label) if len(k.strip()) > 3 else (0, None, None)
+        # A reference is about 90 characters; only use one when it is clearly shorter.
+        if n >= REF_MIN_RUN and len("\n".join(lines[i:i + n])) >= REF_MIN_CHARS:
+            same = all(shadow.raw.get((src, pos + d)) == lines[i + d].rstrip() or
+                       shadow.raw.get((src, pos + d)) == lines[i + d] for d in range(n))
+            first, last = _NUM_PREFIX.match(lines[i]), _NUM_PREFIX.match(lines[i + n - 1])
+            note = "[%d lines identical to lines %d-%d of %s" % (n, pos + 1, pos + n, src)
+            if not same and first and last:
+                note = "[%d lines: same text as lines %d-%d of %s, numbered %s-%s here" % (
+                    n, pos + 1, pos + n, src, first.group(1), last.group(1))
+            res.append(note + "]")
+            i += n
         else:
-            res.extend(lines[i:j])
-        i = j
-    for n, line in enumerate(res):
-        if len(line.strip()) > 3:
-            index.setdefault(line, (call_id, n))
+            res.append(lines[i])
+            i += 1
     return "\n".join(res)
+
+
+def _save_blob(text):
+    """Keep the full text of an output we shortened; return its ID, or None on failure."""
+    blob = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:12]
+    try:
+        os.makedirs(BLOB_DIR, exist_ok=True)
+        path = os.path.join(BLOB_DIR, blob + ".txt")
+        if not os.path.exists(path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+    except OSError:
+        return None
+    return blob
+
+
+# Line classes that carry no information once you know they happened.
+# A run of 3+ lines of one class becomes a one-line count, unless a line looks like an error.
+NOISE = [
+    ("package install", re.compile(r"^\s*(Requirement already satisfied|Collecting |Downloading |Using cached |"
+                                   r"Obtaining |Preparing metadata|Building wheel|Created wheel|Stored in directory|"
+                                   r"Looking in indexes|Attempting uninstall|Found existing installation|"
+                                   r"Uninstalling |Successfully uninstalled|npm (WARN|notice|http)|"
+                                   r"(added|removed|changed|audited) \d+ packages)")),
+    ("progress", re.compile(r"\d{1,3}%\s*\||[\u2588\u2501#=]{10,}|\[\s*\d+%\]\s|"
+                            r"\d+(\.\d+)?\s*[kMG]i?B/s|^\s*\d+(\.\d+)?%\s*$")),
+    ("passing test", re.compile(r"(PASSED|\bpass(ed)?\b\s*(\(\d+(\.\d+)?\s*m?s\))?$|\.\.\. ok$|^ok \d+ |"
+                                r"^\s*[\u2713\u2714]|^test [\w:]+ \.\.\. ok$)", re.I)),
+    ("build step", re.compile(r"^\s*(Compiling|Checking|Downloaded|Fresh|Updating|Locking|Adding) [\w.-]+ v?\d|"
+                              r"^\s*\[\s*\d+%\] (Building|Linking|Built)|^#\d+ \[|^ ---> |^Step \d+/\d+|"
+                              r"^[0-9a-f]{12}: (Pulling|Waiting|Downloading|Extracting|Verifying|Download complete|Pull complete)")),
+    ("git progress", re.compile(r"^(remote: )?(Counting|Compressing|Receiving|Resolving|Enumerating|Writing) objects")),
+]
+
+
+def _filter_noise(text):
+    """Collapse runs of routine lines (installs, progress bars, passing tests, build steps).
+
+    Error-like lines are always kept. The full output is saved, so nothing is lost.
+    """
+    lines = text.split("\n")
+
+    def cls(line):
+        if _ERRORISH.search(line) and not re.search(r"\b0 (errors?|failed|failures?)\b", line, re.I):
+            return None
+        for name, pat in NOISE:
+            if pat.search(line):
+                return name
+        return None
+
+    kinds = [cls(l) for l in lines]
+    if sum(1 for k in kinds if k) < 3:
+        return text
+    blob = None
+    out, i = [], 0
+    while i < len(lines):
+        j = i + 1
+        while j < len(lines) and kinds[i] and kinds[j] == kinds[i]:
+            j += 1
+        if kinds[i] and j - i >= 3:
+            blob = blob or _save_blob(text)
+            if not blob:
+                return text
+            out.append("[%d %s lines omitted; full output: leantokens show %s]" % (j - i, kinds[i], blob))
+        else:
+            out.extend(lines[i:j])
+        i = j
+    return "\n".join(out)
 
 
 def _expandable(text):
@@ -372,14 +525,8 @@ def _expandable(text):
     lines = text.split("\n")
     if len(lines) <= BIG_LINES:
         return text
-    blob = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:12]
-    try:
-        os.makedirs(BLOB_DIR, exist_ok=True)
-        path = os.path.join(BLOB_DIR, blob + ".txt")
-        if not os.path.exists(path):
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
-    except OSError:
+    blob = _save_blob(text)
+    if not blob:
         return text
     head, tail = 80, 40
     middle = [(n, l) for n, l in enumerate(lines[head:-tail], head) if _ERRORISH.search(l)][:40]
@@ -419,9 +566,15 @@ def compress_request(body, lossy=False, smart=False):
     """
     stats = [0, 0]
     seen = {}
-    index = {}
+    shadow = Shadow()
 
-    for holder, key, call_id in _tool_results(body):
+    for event in _walk(body):
+        if event[0] == "wrote":
+            if smart:
+                shadow.add(event[1], event[2].split("\n"))
+            continue
+        _, holder, key, call_id = event
+
         def fn(t, call_id=call_id):
             out = compress_tool(t, lossy)
             if len(t) >= MIN_TOOL_CHARS:
@@ -432,7 +585,13 @@ def compress_request(body, lossy=False, smart=False):
                 else:
                     seen.setdefault(h, call_id)
                     if smart and not _is_json(out):
-                        out = _reference_runs(_expandable(out), call_id, index)
+                        label = "tool call %s" % call_id
+                        smarter = _reference_runs(_expandable(_filter_noise(out)), label, shadow)
+                        # Guard: keep the smart version only if it really costs fewer tokens.
+                        if count(smarter)[0] < count(out)[0]:
+                            out = smarter
+                        # Record exactly what the model is sent, so later references stay correct.
+                        shadow.add(label, out.split("\n"))
             stats[0] += len(t)
             stats[1] += len(out)
             return out

@@ -17,7 +17,8 @@ leantokens wrap claude
 | The same tool output seen again in a conversation | Replaced by `[Same output as tool call X above.]` | Yes, the earlier copy is still in context |
 | Logs and command output | Repeated lines collapse to one line with `[xN]`, color codes and trailing spaces removed | Yes, apart from color codes |
 | File reads | Line-number padding trimmed | Yes |
-| Runs of 6+ lines already shown earlier, e.g. a file re-opened after an edit (`--smart`) | Replaced by `[N lines identical to lines A-B of tool call X]` | Yes, the lines are still in context |
+| Runs of lines already shown earlier, even when an edit renumbered them (`--smart`) | Replaced by `[N lines: same text as lines A-B of tool call X, numbered C-D here]` | Yes, the lines are still in context; `python3 bench/bench_traces.py --verify` checks every reference |
+| Routine command output: installs, progress bars, passing tests, build steps (`--smart`) | Runs of 3+ collapse to a count; error lines always kept; full output via `leantokens show ID` | Recoverable on demand |
 | Outputs over 400 lines (`--smart`) | Start, end and error lines kept; the full text is saved locally and the agent can read any part with `leantokens show ID --lines A-B` | Recoverable on demand |
 | Runs of near-identical log lines (`--lossy` only) | First and last line kept, middle replaced by `... [N similar lines omitted]` | No |
 | Your messages and system prompt | Untouched | n/a |
@@ -28,11 +29,13 @@ Compression is deterministic and never changes earlier turns, so Anthropic and O
 
 200 public SWE-agent sessions (5,463 API requests) where an agent fixes real GitHub issues by opening files, searching, editing and running tests. Counted with `tiktoken`; reproduce with `python3 bench/bench_traces.py`.
 
+Two independent samples of 200 sessions each (dataset offsets 0 and 5000):
+
 | Mode | Final context | Total session input | Median session |
 |---|---|---|---|
-| leantokens | 13.9% smaller | 10.8% smaller | 2.7% |
-| `--smart` | 24.3% smaller | 17.0% smaller | 15.6% |
-| `--smart --lossy` | 24.8% smaller | 17.4% smaller | 16.3% |
+| leantokens | 13.9% / 14.9% smaller | 10.8% / 13.2% smaller | 2.7% / 0.0% |
+| `--smart` | **30.5% / 35.7% smaller** | **21.4% / 27.4% smaller** | **22.4% / 25.6%** |
+| `--smart --lossy` | 30.9% / 35.8% smaller | 21.7% / 27.4% smaller | 23.0% / 25.6% |
 
 Most of the gain comes from agents re-opening files they have already seen: 65% of tool-output tokens in these sessions are file views, and half of all tool-output lines repeat lines shown earlier. JSON-heavy and log-heavy work (API calls, CI output) saves much more; in a synthetic session of that kind, default mode saved 60%.
 
