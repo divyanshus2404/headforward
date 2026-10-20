@@ -2224,15 +2224,27 @@ OLD_PLIST = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", OLD
 
 
 def _remove_old_service():
-    """Stop and remove a background proxy installed under the old name; it holds the same port."""
-    if not os.path.exists(OLD_PLIST):
+    """Stop and remove a background proxy installed under the old name; it holds the same port.
+
+    Asks launchd rather than trusting the plist file: the service can still
+    be loaded after its file is gone.
+    """
+    target = "gui/%d/%s" % (os.getuid(), OLD_LABEL)
+    loaded = _launchctl("print", target).returncode == 0
+    if not (loaded or os.path.exists(OLD_PLIST)):
         return False
-    _launchctl("bootout", "gui/%d/%s" % (os.getuid(), OLD_LABEL))
-    os.remove(OLD_PLIST)
-    for _ in range(20):  # wait for it to let go of the port
-        if not _healthy(0.2):
-            break
-        time.sleep(0.25)
+    if loaded:
+        _launchctl("bootout", target)
+    if os.path.exists(OLD_PLIST):
+        os.remove(OLD_PLIST)
+    if loaded:
+        for _ in range(40):  # wait for it to let go of the port
+            if not _healthy(0.2):
+                break
+            time.sleep(0.25)
+        else:
+            raise RuntimeError("the old background proxy (%s) did not stop; run `launchctl bootout %s` "
+                               "and try again" % (OLD_LABEL, target))
     return True
 
 
