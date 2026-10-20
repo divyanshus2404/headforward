@@ -1,51 +1,52 @@
 # leantokens
 
-Cut the tokens your AI coding agent spends.
+[![PyPI](https://img.shields.io/pypi/v/leantokens)](https://pypi.org/project/leantokens/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)](https://pypi.org/project/leantokens/)
+[![Tests](https://github.com/divyanshus2404/leantokens/actions/workflows/test.yml/badge.svg)](https://github.com/divyanshus2404/leantokens/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Coding agents spend most of their tokens re-reading tool output: JSON from APIs, logs and file reads. leantokens runs a small local proxy between the agent and the model and shrinks that output before it is sent. You keep using Claude Code or Codex as before.
+**Cut the tokens Claude Code spends re-reading tool output, without hiding what it needs.**
+
+Coding agents spend most of their tokens on tool output: test runs, build logs, `git log`, file reads, JSON from APIs. leantokens shrinks that output before the model sees it. Error lines are always kept, and anything it shortens is saved so the agent can read it back.
+
+One Python file. No dependencies. Works on macOS, Linux and Windows.
 
 ```bash
 pip install leantokens
-leantokens wrap claude
+leantokens hooks install global   # every Claude Code session, desktop app included
+leantokens doctor                 # checks your setup and says what to fix
 ```
+
+Start a new Claude Code session and work as usual. `leantokens stats` shows what you saved.
 
 ## What it does
 
-| Input | What happens | Lossless? |
-|---|---|---|
-| JSON lists of same-shaped objects | Keys written once, values as rows; columns with one value for every row are stated once (`{"_cols", "_rows", "_same"}`) | Yes, `expand()` rebuilds the original exactly |
-| The same tool output seen again in a conversation | Replaced by `[Same output as tool call X above.]` | Yes, the earlier copy is still in context |
-| Logs and command output | Repeated lines collapse to one line with `[xN]`, color codes and trailing spaces removed | Yes, apart from color codes |
-| File reads | Line-number padding trimmed | Yes |
-| Runs of lines already shown earlier, even when an edit renumbered them (`--smart`) | Replaced by `[N lines: same text as lines A-B of tool call X, numbered C-D here]` | Yes, the lines are still in context; `python3 bench/bench_traces.py --verify` checks every reference |
-| Routine command output: installs, progress bars, passing tests, build steps (`--smart`) | Runs of 3+ collapse to a count; error lines always kept; full output via `leantokens show ID` | Recoverable on demand |
-| Outputs over 400 lines (`--smart`) | Start, end and error lines kept; the full text is saved locally and the agent can read any part with `leantokens show ID --lines A-B` | Recoverable on demand |
-| Runs of near-identical log lines (`--lossy` only) | First and last line kept, middle replaced by `... [N similar lines omitted]` | No |
-| Your messages and system prompt | Untouched | n/a |
+A pytest run with 42 tests and one failure, **601 tokens → 143**:
 
-Compression is deterministic and never changes earlier turns, so Anthropic and OpenAI prompt caching keeps hitting.
+```text
+============================= test session starts ==============================
+collected 42 items
 
-### Measured on real agent sessions
+[40 passing test lines omitted; full output: leantokens show 256d7a092127]
+tests/test_orders.py::test_refund_total FAILED
+tests/test_orders.py::test_missing_sku PASSED
 
-200 public SWE-agent sessions (5,463 API requests) where an agent fixes real GitHub issues by opening files, searching, editing and running tests. Counted with `tiktoken`; reproduce with `python3 bench/bench_traces.py`.
+=================================== FAILURES ===================================
+______________________________ test_refund_total _______________________________
+    def test_refund_total():
+>       assert round(19.99 * 3, 2) == 59.98
+E       assert 59.97 == 59.98
+tests/test_orders.py:88: AssertionError
+========================= 1 failed, 41 passed in 0.42s =========================
+```
 
-Two independent samples of 200 sessions each (dataset offsets 0 and 5000):
+The failure, its assertion and the summary are untouched. The 40 passing lines are one line, and Claude can run `leantokens show 256d7a092127` to see them.
 
-| Mode | Final context | Total session input | Median session |
-|---|---|---|---|
-| leantokens | 13.9% / 14.9% smaller | 10.8% / 13.2% smaller | 2.7% / 0.0% |
-| `--smart` | **30.5% / 35.7% smaller** | **21.4% / 27.4% smaller** | **22.4% / 25.6%** |
-| `--smart --lossy` | 31.2% / 35.9% smaller | 22.1% / 27.6% smaller | 22.7% / 26.0% |
+## Compared with rtk and Headroom
 
-Most of the gain comes from agents re-opening files they have already seen: 65% of tool-output tokens in these sessions are file views, and half of all tool-output lines repeat lines shown earlier. JSON-heavy and log-heavy work (API calls, CI output) saves much more; in a synthetic session of that kind, default mode saved 60%.
+The same 7 real command outputs from one Mac, run through each tool. "Facts kept" counts strings each output must still contain: failing test names and values, error lines, list items.
 
-`--smart` keeps every line the model saw available in context or on disk, but it changes how the agent sees repeated content. Until you have run `leantokens eval` on your own work, treat it as something to measure, not a guaranteed same-result setting.
-
-### Compared with rtk and Headroom
-
-The same 7 real command outputs from one Mac, run through each tool (rtk 0.43.0 command wrappers, Headroom 0.41.0 default `compress()`, leantokens hook plus proxy). "Facts" are strings each output must still contain: failing test names and assertion values, error lines, list items. Reproduce with `python3 bench/compare_tools.py`; captured outputs differ per machine.
-
-| Output | Raw | rtk | Headroom | leantokens |
+| Output | Raw tokens | rtk | Headroom | leantokens |
 |---|---|---|---|---|
 | Unit tests, 2 failures | 1,899 | 67, failures hidden | 1,899 | 293 |
 | `git log --stat`, 40 commits | 4,869 | 1,271 | 4,869 | 3,800 |
@@ -57,33 +58,58 @@ The same 7 real command outputs from one Mac, run through each tool (rtk 0.43.0 
 | **Tokens saved** | | **89%** | **6%** | **39%** |
 | **Facts kept** | | 9 of 19 | 19 of 19 | 19 of 19 |
 
-rtk summarizes hardest and saves its full output to a file the agent can read later. Headroom's proxy has more options than the default `compress()` tested here.
+rtk 0.43.0 summarizes hardest and saves its full output to a file the agent can read later. Headroom 0.41.0 was tested with its default `compress()`; its proxy has more options. This is a small benchmark and I wrote leantokens, so run it yourself: `python3 bench/compare_tools.py`.
 
-## Check it on your own work
+## Ways to run it
 
-`leantokens stats` reports what the provider actually billed (input, cache hits, output) and the tokens saved, converted at your real billed rate.
+| | Hooks | Always-on proxy | Wrap |
+|---|---|---|---|
+| **Command** | `leantokens hooks install global` | `leantokens desktop on global` | `leantokens wrap claude` |
+| **What it compresses** | Output of noisy commands | Every tool result: JSON, repeated reads, logs | Every tool result, one session |
+| **Claude Code in a terminal** | Yes | Yes (macOS) | Yes |
+| **Claude Code in the desktop app** | Yes | No, the app ignores base URLs | No |
+| **Codex CLI, Aider** | No | Set the URL yourself | Yes |
+| **Undo** | `leantokens hooks uninstall global` | `leantokens desktop off` | Quit the agent |
 
-To check that answers don't change, record real requests and replay them with and without compression:
+Hooks and the proxy work together: hooks shrink command output as it's produced, and the proxy compresses everything else.
+
+### Hooks
 
 ```bash
-leantokens wrap --record ~/lt-rec claude     # work as usual; requests are saved without API keys
-leantokens eval ~/lt-rec --tokens-only       # exact token savings (free on Anthropic, uses count_tokens)
-leantokens eval ~/lt-rec                     # also asks the model both ways and compares the answers
+leantokens hooks install global          # or a single project: leantokens hooks install ~/code/my-app
+leantokens hooks uninstall global
 ```
 
-`eval` needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, and the full run costs about two API calls per recording. Recordings contain your conversation, so they stay on your machine; delete the folder when done.
+A Claude Code `PreToolUse` hook pipes these commands through the filter: tests (`pytest`, `npm test`, `go test`, `cargo test` and similar), installs and builds (`pip install`, `npm install`, `make`, `cargo build`, `docker build`), plus `git log`, `ls -l`, `grep`, `rg` and `log show`. Every other command is left alone.
 
-## Usage
+- Colour codes and progress-bar redraws are removed.
+- Runs of routine lines (passing tests, download lines, build steps) collapse to a count.
+- Git logs, long listings, multi-file grep results and timestamped logs are compacted: full hashes shortened, a single author or owner stated once, stat bar graphs dropped, grep matches grouped under their file, near-identical log lines counted on the first one.
+- Error-like lines are always kept, and the command's exit code is preserved.
+
+### Always-on proxy (macOS)
+
+```bash
+leantokens desktop on global      # or one project first: leantokens desktop on ~/code/my-app
+leantokens desktop status         # running? which settings use it? where does it forward?
+leantokens desktop off            # stop it and undo every settings change
+```
+
+Runs the proxy at login (launchd), restarts it within about 2 seconds if it stops, and points Claude Code's settings at it. Settings change only after the proxy is confirmed running, and a backup is kept.
+
+**Already using a gateway?** If your Claude Code settings point `ANTHROPIC_BASE_URL` at a router, cost tracker or company proxy, leantokens goes in front of it: Claude Code → leantokens → your gateway → Anthropic. `desktop off` puts your URL back.
+
+### Wrap one session
 
 ```bash
 leantokens wrap claude            # Claude Code
-leantokens wrap --smart claude    # biggest savings: references repeated lines, shortens huge outputs
+leantokens wrap --smart claude    # biggest savings, see below
 leantokens wrap --lossy claude    # also shorten near-identical log lines
 leantokens wrap codex             # Codex CLI (API key login)
 leantokens wrap aider             # Aider
-leantokens stats                  # billed tokens, cache hits, tokens saved
-leantokens eval ~/lt-rec          # replay recordings, compare savings and answers
 ```
+
+Starts a private proxy, launches the agent pointed at it, and prints what you saved when you quit.
 
 ### Proxy for your own app or SDK
 
@@ -93,41 +119,64 @@ export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
 export OPENAI_BASE_URL=http://127.0.0.1:8787/v1
 ```
 
-API keys pass straight through to the provider and are never stored. Add `--cache` to have the proxy add Anthropic prompt-caching markers for apps that do not set any. Repeated context then costs about 10% of the normal input price, but a request that is never repeated costs 25% more, so use it for chat apps and agents, not one-off calls. If `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` is already set when the proxy starts, it forwards there instead of the public API, so company gateways keep working.
+API keys pass straight through to the provider and are never stored. If `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL` is already set when the proxy starts, it forwards there, so company gateways keep working. Add `--cache` to add Anthropic prompt-caching markers for apps that set none: repeated context then costs about 10% of normal input, but a request that is never repeated costs 25% more, so use it for chat apps and agents, not one-off calls.
 
-### Claude chat (claude.ai and the desktop app)
+## What gets compressed
 
-The chat apps talk only to Anthropic's servers, so nothing can sit in between. Instead, compress what you paste:
+| Input | What happens | Lossless? |
+|---|---|---|
+| JSON lists of same-shaped objects | Keys written once, values as rows; columns with one value for every row are stated once | Yes, `expand()` rebuilds the original exactly |
+| The same tool output seen again | Replaced by `[Same output as tool call X above.]` | Yes, the earlier copy is still in context |
+| Logs and command output | Repeated lines collapse to one line with `[xN]`; colour codes and trailing spaces removed | Yes, apart from colour codes |
+| File reads | Line-number padding trimmed | Yes |
+| Routine command output (hooks, `--smart`) | Runs of 3+ installs, progress bars, passing tests or build steps collapse to a count | Recoverable with `leantokens show ID` |
+| Git log, `ls -l`, grep, timestamped logs (hooks, `--lossy`) | Repeated and derivable parts removed; every distinct line kept | Recoverable with `leantokens show ID` |
+| Runs of lines already shown earlier, even after an edit renumbered them (`--smart`) | Replaced by a reference to the earlier lines | Yes, the lines are still in context |
+| Outputs over 400 lines (`--smart`) | Start, end and error lines kept | Recoverable with `leantokens show ID --lines A-B` |
+| Runs of near-identical log lines (`--lossy`) | First and last kept, middle replaced by a count | No |
+| Your messages and the system prompt | Untouched | n/a |
+
+Compression is deterministic and never changes earlier turns, so Anthropic and OpenAI prompt caching keeps hitting.
+
+## Measured on real agent sessions
+
+400 public SWE-agent sessions, in two independent samples of 200, where an agent fixes real GitHub issues by opening files, searching, editing and running tests. Counted with `tiktoken`; reproduce with `python3 bench/bench_traces.py`.
+
+| Mode | Final context | Total session input | Median session |
+|---|---|---|---|
+| default | 13.9% / 14.9% smaller | 10.8% / 13.2% smaller | 2.7% / 0.0% |
+| `--smart` | **30.5% / 35.7% smaller** | **21.4% / 27.4% smaller** | **22.4% / 25.6%** |
+| `--smart --lossy` | 31.2% / 35.9% smaller | 22.1% / 27.6% smaller | 22.7% / 26.0% |
+
+Most of the `--smart` gain comes from agents re-opening files they have already seen: 65% of tool-output tokens in these sessions are file views, and half of all tool-output lines repeat lines shown earlier. `--smart` keeps every line available in context or on disk, but it changes how the agent sees repeated content, so measure it on your own work before relying on it.
+
+## Check it on your own work
+
+`leantokens stats` reports what the provider actually billed (input, cache hits, output) and the tokens saved, at your real billed rate.
+
+To check that answers don't change, record real requests and replay them with and without compression:
 
 ```bash
-leantokens clip                       # compresses whatever you copied; then paste into Claude
-leantokens pack src/ logs/app.log     # bundles files into one compact <documents> block on your clipboard
-leantokens pack . --max-tokens 50000  # stop adding files at a token budget
-leantokens count notes.md             # Claude tokens before and after (exact with ANTHROPIC_API_KEY, free)
+leantokens wrap --record ~/lt-rec claude     # work as usual; requests are saved without API keys
+leantokens eval ~/lt-rec --tokens-only       # exact token savings (free on Anthropic, uses count_tokens)
+leantokens eval ~/lt-rec                     # also asks the model both ways and compares the answers
 ```
 
-`clip` uses the JSON and log rules on data and the prompt rules on prose: copying a 30-row API response went from 1,112 to 90 tokens, and a chatty question from 31 to 11. `pack` follows `.gitignore`, skips lockfiles, binaries, `node_modules` and anything that looks like a secret (`.env`, keys, credentials), trims trailing spaces in code and compresses JSON and logs. It uses the `<document path="...">` format Anthropic recommends for long inputs.
+`eval` needs `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` and costs about two API calls per recording. Recordings contain your conversation, so they stay on your machine; delete the folder when done.
 
-### Fix the habits that waste tokens in Claude Code
+## More tools
+
+### Fix the habits that waste tokens
 
 ```bash
 leantokens audit                 # what wastes tokens in this project
-leantokens tune claude           # preview token-saving Claude Code settings
-leantokens tune claude --apply   # save them to .claude/settings.local.json (backup kept)
+leantokens tune claude --apply   # add token-saving Claude Code settings (preview without --apply)
+leantokens usage --by model      # Claude Code token use from its own local logs (--by day|project, --days N)
 ```
 
-`audit` reports how many tokens your `CLAUDE.md` files cost on every request, lockfiles and build output Claude can open, whether command output is capped, and single files big enough to be expensive to read. `tune` adds `Read` deny rules for lockfiles, build folders and minified or source-map files, and sets `bashOutputMaxChars` to 15,000 so longer command output is saved to a file instead of filling the conversation. Existing settings are kept, and nothing is written without `--apply`. Restart Claude Code afterwards.
+`audit` reports what your `CLAUDE.md` files cost on every request, lockfiles and build output Claude can open, whether command output is capped, and files big enough to be expensive to read. `tune` adds `Read` deny rules for lockfiles, build folders and minified or source-map files and caps command output at 15,000 characters; existing settings are kept and a backup is made.
 
-Habits that save the most, with or without leantokens: `/clear` between unrelated tasks, `/compact` in long ones, name the exact file and function, ask for short answers, and use a smaller model with `/model` for simple edits.
-
-### See what Claude Code actually used
-
-```bash
-leantokens usage                 # last 7 days, by day
-leantokens usage --by model      # or --by project, --days 30
-```
-
-Reads Claude Code's own logs in `~/.claude/projects` (nothing is sent anywhere) and shows replies, input, cache writes, cache reads and output, plus how much input came from the prompt cache.
+Habits that save the most, with or without leantokens: `/clear` between unrelated tasks, `/compact` in long ones, name the exact file and function, and use a smaller model with `/model` for simple edits.
 
 ### Give Claude a map instead of whole files
 
@@ -136,66 +185,34 @@ leantokens map --copy            # every file's classes and functions, with line
 leantokens pack src/ --outline   # signatures only for code, full text for everything else
 ```
 
-`map` describes the 85 KB leantokens source in about 1,400 tokens. Paste it, or put it in `CLAUDE.md`, so Claude can go straight to the right function. `pack --outline` halved the token cost of packing this repository (72,758 to 35,026), and `pack` now lists the most expensive files.
+`map` describes the leantokens source in about 1,400 tokens. Put it in `CLAUDE.md` or paste it so Claude goes straight to the right function.
 
-### Claude Code in the desktop app (hooks)
+### Claude chat (claude.ai and the desktop app)
 
-The desktop app can't be routed through the proxy, but Claude Code hooks run inside every session:
-
-```bash
-leantokens hooks install ~/code/my-app   # or: leantokens hooks install global
-leantokens hooks uninstall ~/code/my-app
-```
-
-A `PreToolUse` hook rewrites test, install and build commands (`npm test`, `pytest`, `pip install`, `cargo build`, `make` and similar) plus `git log`, `ls -l`, `grep`, `rg` and `log show`, so their output is filtered: colour codes and progress redraws are removed, runs of routine lines collapse to a count, and error lines are always kept. Git logs, long listings, multi-file grep results and timestamped logs are also compacted: full hashes shortened, a single author or owner stated once, stat bar graphs dropped, grep matches grouped under their file, and near-identical log lines counted on the first one. Every distinct line is kept. The command's exit code is preserved, anything removed is saved for `leantokens show ID`, and every other command is left alone. Tested in a real desktop Code session: the test run worked, the exit code came through, and the output shrank by 12%. Savings are larger on install and build output.
-
-### Always-on proxy for terminal Claude Code (macOS)
-
-Instead of typing `wrap` each time, run the proxy in the background and point a project (or every project) at it:
+Chat apps talk only to Anthropic's servers, so nothing can sit in between. Compress what you paste instead:
 
 ```bash
-leantokens desktop on ~/code/my-app   # one project first
-leantokens desktop status             # running? which settings use it?
-leantokens desktop off                # stop it and undo every settings change
+leantokens clip                       # compress whatever you copied, then paste into Claude
+leantokens pack src/ logs/app.log     # bundle files into one compact <documents> block on your clipboard
+leantokens count notes.md             # Claude tokens before and after
+pbpaste | leantokens - -l high        # compress a prompt (levels: light, medium, high, max)
 ```
 
-The proxy runs as a login item (launchd), restarts within about 2 seconds if it stops, and answers a health check at `http://127.0.0.1:8787/leantokens/health`. `on` edits settings only after the proxy is confirmed running and keeps a backup. If your settings already point `ANTHROPIC_BASE_URL` at another gateway (a router, cost tracker or company proxy), leantokens goes in front of it: requests flow Claude Code → leantokens → your gateway, and `off` puts your URL back.
-
-**Not for the Claude desktop app.** Tested: Code sessions in the desktop app set their own connection to Anthropic and ignore `ANTHROPIC_BASE_URL` in settings, so their requests never reach the proxy. This works for Claude Code started in a terminal.
-
-### Check your setup
-
-```bash
-leantokens doctor
-```
-
-Checks Python, the `leantokens` command, Claude Code and its sign-in, `ANTHROPIC_BASE_URL`, that the proxy can reach Anthropic, and the stats file, and prints the fix for anything wrong.
-
-### Compress a prompt
-
-For pasting into chat apps:
-
-```bash
-pbpaste | leantokens - -l high | pbcopy     # macOS clipboard in, clipboard out
-leantokens prompt.txt -l high               # levels: light, medium, high, max
-leantokens api.json --tool                  # tool-output rules on a file
-```
-
-Prompt levels cut whitespace, filler words, greetings, sign-offs, repeated sentences, hedges and articles. Code blocks are never rewritten, except that `high` minifies JSON blocks and `max` drops comment-only lines.
-
-Install `tiktoken` for exact token counts: `pip install "leantokens[exact]"`.
+`pack` follows `.gitignore` and skips lockfiles, binaries, `node_modules` and anything that looks like a secret (`.env`, keys, credentials).
 
 ## Limits
 
-- Only tool output is compressed when proxying.
-- An `ANTHROPIC_BASE_URL` exported in your shell overrides Claude Code settings, so it bypasses the always-on proxy. `leantokens doctor` warns about this.
-- Codex signed in with a ChatGPT account talks to ChatGPT's servers, so it bypasses the proxy. Use an API key login.
-- Browser chat apps (claude.ai, chatgpt.com) can't be proxied. Use the prompt compressor.
+- The proxy compresses only tool output. Your messages and the system prompt are untouched.
+- Savings depend on the work. Log-heavy, test-heavy and JSON-heavy sessions save the most; reading source code saves little, because code is left as written.
+- Conversation history usually costs more than any tool output. `/clear` and `/compact` matter.
+- The Claude desktop app ignores `ANTHROPIC_BASE_URL`, so use hooks there.
+- An `ANTHROPIC_BASE_URL` exported in your shell overrides Claude Code settings and bypasses the always-on proxy. `leantokens doctor` warns about this.
+- Codex signed in with a ChatGPT account talks to ChatGPT's servers and bypasses the proxy. Use an API key login.
 
 ## No pip?
 
-leantokens is one file with no dependencies. Download `leantokens.py` and run `python3 leantokens.py wrap claude`.
+leantokens is one file with no dependencies. Download [`leantokens.py`](leantokens.py) and run `python3 leantokens.py` wherever this page says `leantokens`. For exact token counts, install `tiktoken` or `pip install "leantokens[exact]"`.
 
 ## License
 
-MIT
+MIT. Issues and pull requests are welcome, especially examples where leantokens hid something your agent needed.
