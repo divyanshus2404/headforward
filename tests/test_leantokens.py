@@ -336,6 +336,53 @@ class AuditTuneTests(unittest.TestCase):
             self.assertEqual(open(os.path.join(d, ".claude", "settings.local.json")).read(), "{not json")
 
 
+class UsageMapTests(unittest.TestCase):
+    def test_usage_counts_each_reply_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            proj = os.path.join(d, "-Users-me-app")
+            os.makedirs(proj)
+            u = {"input_tokens": 3, "cache_creation_input_tokens": 100, "cache_read_input_tokens": 900}
+            lines = [
+                {"type": "assistant", "timestamp": "2026-10-19T10:00:00Z", "requestId": "r1",
+                 "message": {"id": "m1", "model": "claude-x", "usage": dict(u, output_tokens=5)}},
+                {"type": "assistant", "timestamp": "2026-10-19T10:00:01Z", "requestId": "r1",
+                 "message": {"id": "m1", "model": "claude-x", "usage": dict(u, output_tokens=40)}},
+                {"type": "assistant", "timestamp": "2026-10-20T09:00:00Z", "requestId": "r2",
+                 "message": {"id": "m2", "model": "claude-y", "usage": dict(u, output_tokens=7)}},
+                {"type": "user", "message": {"role": "user", "content": "hi"}},
+                {"type": "assistant", "timestamp": "2026-10-20T09:00:00Z", "requestId": "r3",
+                 "message": {"id": "m3", "model": "<synthetic>", "usage": dict(u, output_tokens=1)}},
+            ]
+            with open(os.path.join(proj, "s.jsonl"), "w") as f:
+                f.write("\n".join(json.dumps(l) for l in lines) + "\nnot json\n")
+            rows = lt.read_claude_usage(d)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(sorted(r["output"] for r in rows), [7, 40])
+            self.assertEqual(sum(r["cache_read"] for r in rows), 1800)
+            self.assertEqual(len(lt.read_claude_usage(d, since="2026-10-20")), 1)
+
+    def test_outline_python_and_ts(self):
+        py = "import os\n\nclass Cart:\n    def add(self, item):\n        pass\n\nasync def fetch(url):\n    x = 1\n"
+        self.assertEqual(lt.outline("a.py", py),
+                         ["    3  class Cart", "    4      def add(self, item)", "    7  async def fetch(url)"])
+        ts = "export async function load(id: string) {\n}\nexport const save = async (x) => x\nconst y = 2\n"
+        self.assertEqual(lt.outline("a.ts", ts),
+                         ["    1  export async function load(id: string)", "    3  export const save = async (x) => x"])
+        self.assertIsNone(lt.outline("notes.md", "# hi"))
+
+    def test_map_and_pack_outline(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "svc.py"), "w") as f:
+                f.write("def handler(event):\n" + "    x = 1\n" * 200 + "\nclass Store:\n    pass\n")
+            m = lt.code_map([d])
+            self.assertIn("svc.py", m)
+            self.assertIn("1  def handler(event)", m)
+            full, _, _ = lt.pack_files([d])
+            small, _, _ = lt.pack_files([d], outline_code=True)
+            self.assertIn("outline only: 2 definitions", small)
+            self.assertLess(len(small), len(full) / 5)
+
+
 class CacheTests(unittest.TestCase):
     def test_adds_markers(self):
         b = {"system": "sys", "messages": [{"role": "user", "content": "hi"}]}

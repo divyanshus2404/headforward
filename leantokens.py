@@ -1365,7 +1365,7 @@ def _collect(paths):
     return out, skipped
 
 
-def pack_files(paths, budget=None):
+def pack_files(paths, budget=None, outline_code=False):
     """Build a Claude-friendly <documents> block. Returns (text, included, skipped)."""
     files, skipped = _collect(paths)
     docs, included = [], []
@@ -1381,7 +1381,11 @@ def pack_files(paths, budget=None):
             continue
         text = raw.decode("utf-8", "replace")
         ext = os.path.splitext(f)[1].lower()
-        if ext in (".json", ".log", ".jsonl", ".ndjson") or "log" in os.path.basename(f).lower():
+        sig = outline(f, text) if outline_code else None
+        if sig:
+            body = "(outline only: %d definitions from %d lines; ask for the full file if needed)\n%s" % (
+                len(sig), text.count("\n") + 1, "\n".join(sig))
+        elif ext in (".json", ".log", ".jsonl", ".ndjson") or "log" in os.path.basename(f).lower():
             body = compress_tool(text)
         else:
             body = "\n".join(l.rstrip() for l in text.split("\n")).strip("\n")
@@ -1403,8 +1407,10 @@ def cmd_pack(argv):
     ap.add_argument("--max-tokens", type=int, help="stop adding files once this many tokens are used")
     ap.add_argument("-o", "--out", help="write to this file instead of the clipboard")
     ap.add_argument("--print", action="store_true", help="print to the terminal instead of the clipboard")
+    ap.add_argument("--outline", action="store_true",
+                    help="send only class and function signatures for source code (much smaller)")
     a = ap.parse_args(argv)
-    text, included, skipped = pack_files(a.paths, a.max_tokens)
+    text, included, skipped = pack_files(a.paths, a.max_tokens, a.outline)
     if not included:
         print("leantokens: no text files to pack.", file=sys.stderr)
         return 1
@@ -1427,6 +1433,10 @@ def cmd_pack(argv):
     print("leantokens: packed %d file%s, %s tokens%s (from %s characters of source), %s."
           % (len(included), "" if len(included) == 1 else "s", format(tokens, ","),
              "" if exact else " (estimate)", format(raw_chars, ","), dest), file=sys.stderr)
+    top = sorted(included, key=lambda x: -x[2])[:5]
+    if len(included) > 1:
+        print("  largest: " + ", ".join("%s (%s)" % (os.path.relpath(f), format(t, ",")) for f, _, t in top),
+              file=sys.stderr)
     for f, why in skipped[:15]:
         print("  skipped %s: %s" % (os.path.relpath(f), why), file=sys.stderr)
     if len(skipped) > 15:
@@ -1672,6 +1682,195 @@ def cmd_tune(argv):
     return 0
 
 
+# ---------------------------------------------------------------------------
+# usage: what Claude Code actually used, read from its own local logs.
+# ---------------------------------------------------------------------------
+
+CLAUDE_LOGS = os.path.join(os.path.expanduser("~"), ".claude", "projects")
+
+
+def read_claude_usage(root=CLAUDE_LOGS, since=None):
+    """One record per model reply: {day, model, project, input, cache_write, cache_read, output}.
+
+    Claude Code writes a reply's usage on several log lines (one per content
+    block); they share a message id and request id, so each reply counts once.
+    """
+    best = {}
+    for dirpath, _, names in os.walk(root):
+        for name in names:
+            if not name.endswith(".jsonl"):
+                continue
+            path = os.path.join(dirpath, name)
+            project = os.path.relpath(path, root).split(os.sep)[0]
+            try:
+                fh = open(path, encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            with fh:
+                for line in fh:
+                    if '"usage"' not in line:
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except ValueError:
+                        continue
+                    m = d.get("message")
+                    if not isinstance(m, dict) or not isinstance(m.get("usage"), dict):
+                        continue
+                    ts = d.get("timestamp") or ""
+                    if since and ts[:10] < since:
+                        continue
+                    u = m["usage"]
+                    rec = {"day": ts[:10], "model": m.get("model") or "unknown", "project": project,
+                           "input": u.get("input_tokens", 0) or 0,
+                           "cache_write": u.get("cache_creation_input_tokens", 0) or 0,
+                           "cache_read": u.get("cache_read_input_tokens", 0) or 0,
+                           "output": u.get("output_tokens", 0) or 0}
+                    key = (m.get("id"), d.get("requestId")) if m.get("id") else (path, ts)
+                    if key not in best or rec["output"] >= best[key]["output"]:
+                        best[key] = rec
+    return [r for r in best.values() if r["model"] != "<synthetic>"]
+
+
+def _usage_table(rows, key):
+    groups = {}
+    for r in rows:
+        g = groups.setdefault(r[key], {"replies": 0, "input": 0, "cache_write": 0, "cache_read": 0, "output": 0})
+        g["replies"] += 1
+        for k in ("input", "cache_write", "cache_read", "output"):
+            g[k] += r[k]
+    return groups
+
+
+def cmd_usage(argv):
+    ap = argparse.ArgumentParser(prog="leantokens usage",
+                                 description="Claude Code token use from its local logs (~/.claude/projects).")
+    ap.add_argument("--days", type=int, default=7, help="how many days back (default 7; 0 = all)")
+    ap.add_argument("--by", choices=["day", "model", "project"], default="day")
+    a = ap.parse_args(argv)
+    since = None
+    if a.days:
+        since = time.strftime("%Y-%m-%d", time.localtime(time.time() - (a.days - 1) * 86400))
+    rows = read_claude_usage(since=since)
+    if not rows:
+        print("No Claude Code usage found in %s%s." % (CLAUDE_LOGS, " for the last %d days" % a.days if a.days else ""))
+        return 0
+    groups = _usage_table(rows, a.by)
+    f = lambda n: format(n, ",")
+    width = max(12, max(len(str(k)) for k in groups) if a.by != "day" else 10)
+    width = min(width, 48)
+    hdr = "%-*s %8s %13s %13s %15s %11s %7s" % (width, a.by, "replies", "input", "cache write", "cache read",
+                                              "output", "cached")
+    print(hdr)
+    print("-" * len(hdr))
+    tot = {"replies": 0, "input": 0, "cache_write": 0, "cache_read": 0, "output": 0}
+    for k in sorted(groups):
+        g = groups[k]
+        allin = g["input"] + g["cache_write"] + g["cache_read"]
+        name = str(k)
+        if a.by == "project":
+            name = name.replace("-Users-" + os.path.basename(os.path.expanduser("~")), "~")[:width]
+        print("%-*s %8s %13s %13s %15s %11s %6.0f%%" % (width, name, f(g["replies"]), f(g["input"]), f(g["cache_write"]),
+                                                    f(g["cache_read"]), f(g["output"]),
+                                                    100.0 * g["cache_read"] / allin if allin else 0))
+        for x in tot:
+            tot[x] += g[x]
+    allin = tot["input"] + tot["cache_write"] + tot["cache_read"]
+    print("-" * len(hdr))
+    print("%-*s %8s %13s %13s %15s %11s %6.0f%%" % (width, "total", f(tot["replies"]), f(tot["input"]), f(tot["cache_write"]),
+                                                f(tot["cache_read"]), f(tot["output"]),
+                                                100.0 * tot["cache_read"] / allin if allin else 0))
+    print("\ncached = share of input read from Anthropic's prompt cache (billed at about a tenth of normal input).")
+    share = tot["cache_read"] / float(allin) if allin else 0
+    per_reply = allin // max(1, tot["replies"])
+    if share >= 0.9:
+        print("Caching already works well. Each reply resent about %s tokens of conversation on average;\n"
+              "shorter sessions (/clear, /compact) and `leantokens wrap claude` shrink that." % f(per_reply))
+    else:
+        print("Only %.0f%% of input was cached. Uncached input costs about 10x more: keep CLAUDE.md and the start\n"
+              "of each session stable, and avoid switching models mid-session." % (100 * share))
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# map: a compact outline of a codebase (idea from Aider's repo map).
+# ---------------------------------------------------------------------------
+
+_OUTLINE = {
+    ".py": re.compile(r"^(\s*)(async\s+def|def|class)\s+(\w+)\s*(\([^)]*\)?)?"),
+    ".js": re.compile(r"^(\s*)(export\s+)?(default\s+)?(async\s+)?(function\*?|class)\s+(\w+)\s*(\([^)]*\)?)?"
+                      r"|^(\s*)(export\s+)?(const|let)\s+(\w+)\s*=\s*(async\s*)?(\([^)]*\)|\w+)\s*=>"),
+    ".go": re.compile(r"^(func)\s+(\([^)]*\)\s*)?(\w+)\s*(\([^)]*\)?)|^(type)\s+(\w+)\s+(struct|interface)"),
+    ".rs": re.compile(r"^(\s*)(pub(\([^)]*\))?\s+)?(async\s+)?(fn|struct|enum|trait|impl)\b\s*([^{;]*)"),
+    ".java": re.compile(r"^(\s*)(public|private|protected)[\w\s<>\[\],]*?\b(class|interface|enum|record|\w+\s*\()"),
+    ".rb": re.compile(r"^(\s*)(def|class|module)\s+([\w.:!?]+)"),
+}
+for _e in (".ts", ".tsx", ".jsx", ".mjs", ".cjs"):
+    _OUTLINE[_e] = _OUTLINE[".js"]
+for _e in (".kt", ".cs", ".swift", ".scala"):
+    _OUTLINE[_e] = _OUTLINE[".java"]
+
+
+def outline(path, text):
+    """Signature lines of a source file, or None for unsupported files."""
+    pat = _OUTLINE.get(os.path.splitext(path)[1].lower())
+    if not pat:
+        return None
+    out = []
+    for n, line in enumerate(text.split("\n"), 1):
+        if pat.match(line):
+            sig = line.rstrip().rstrip("{").rstrip(":").rstrip()
+            if len(sig) > 140:
+                sig = sig[:137] + "..."
+            out.append("%5d  %s" % (n, sig))
+    return out
+
+
+def code_map(paths, budget=None):
+    files, _ = _collect(paths)
+    parts, used = [], 0
+    for f in files:
+        try:
+            text = open(f, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        lines = outline(f, text)
+        if lines is None or not lines:
+            continue
+        block = "%s\n%s" % (os.path.relpath(f), "\n".join(lines))
+        cost = count(block)[0]
+        if budget and used + cost > budget:
+            parts.append("... (stopped at the %s-token budget)" % format(budget, ","))
+            break
+        used += cost
+        parts.append(block)
+    return "\n\n".join(parts)
+
+
+def cmd_map(argv):
+    ap = argparse.ArgumentParser(prog="leantokens map",
+                                 description="A compact outline of a codebase: every file's classes and functions with line numbers.")
+    ap.add_argument("paths", nargs="*", default=["."])
+    ap.add_argument("--max-tokens", type=int, help="stop at this many tokens")
+    ap.add_argument("--copy", action="store_true", help="copy to the clipboard instead of printing")
+    a = ap.parse_args(argv)
+    text = code_map(a.paths, a.max_tokens)
+    if not text:
+        print("leantokens: no supported source files found (Python, JS/TS, Go, Rust, Java-family, Ruby).", file=sys.stderr)
+        return 1
+    if a.copy:
+        try:
+            write_clipboard(text)
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            print("leantokens: could not write the clipboard (%s)" % e, file=sys.stderr)
+            return 1
+    else:
+        sys.stdout.write(text + "\n")
+    print("leantokens: map is %s tokens%s." % (format(count(text)[0], ","), ", copied" if a.copy else ""),
+          file=sys.stderr)
+    return 0
+
+
 USAGE = """usage:
   leantokens wrap claude [args...]       run Claude Code through the compressor
   leantokens wrap codex [args...]        run OpenAI Codex CLI (API key auth)
@@ -1690,6 +1889,8 @@ Claude chat (claude.ai, desktop app):
 Claude Code habits:
   leantokens audit [PATH]                find what wastes tokens in a project
   leantokens tune claude [PATH] --apply  add safe token-saving Claude Code settings
+  leantokens usage [--days N] [--by day|model|project]  Claude Code token use from its local logs
+  leantokens map [PATH...] [--copy]      compact outline of a codebase (classes, functions, lines)
   leantokens prompt.txt [-l high]        compress a prompt file (- for stdin)
 
 wrap and proxy options:
@@ -1715,9 +1916,9 @@ def main(argv=None):
         return cmd_eval(argv[1:])
     if argv and argv[0] == "show":
         return cmd_show(argv[1:])
-    if argv and argv[0] in ("doctor", "clip", "pack", "count", "audit", "tune"):
+    if argv and argv[0] in ("doctor", "clip", "pack", "count", "audit", "tune", "usage", "map"):
         return {"doctor": cmd_doctor, "clip": cmd_clip, "pack": cmd_pack, "count": cmd_count,
-                "audit": cmd_audit, "tune": cmd_tune}[argv[0]](argv[1:])
+                "audit": cmd_audit, "tune": cmd_tune, "usage": cmd_usage, "map": cmd_map}[argv[0]](argv[1:])
     if argv and argv[0] == "proxy":
         ap = argparse.ArgumentParser(prog="leantokens proxy")
         ap.add_argument("--port", type=int, default=8787)

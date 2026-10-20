@@ -102,6 +102,24 @@ leantokens tune claude --apply   # save them to .claude/settings.local.json (bac
 
 Habits that save the most, with or without leantokens: `/clear` between unrelated tasks, `/compact` in long ones, name the exact file and function, ask for short answers, and use a smaller model with `/model` for simple edits.
 
+### See what Claude Code actually used
+
+```bash
+leantokens usage                 # last 7 days, by day
+leantokens usage --by model      # or --by project, --days 30
+```
+
+Reads Claude Code's own logs in `~/.claude/projects` (nothing is sent anywhere) and shows replies, input, cache writes, cache reads and output, plus how much input came from the prompt cache.
+
+### Give Claude a map instead of whole files
+
+```bash
+leantokens map --copy            # every file's classes and functions, with line numbers
+leantokens pack src/ --outline   # signatures only for code, full text for everything else
+```
+
+`map` describes the 85 KB leantokens source in about 1,400 tokens. Paste it, or put it in `CLAUDE.md`, so Claude can go straight to the right function. `pack --outline` halved the token cost of packing this repository (72,758 to 35,026), and `pack` now lists the most expensive files.
+
 ### Check your setup
 
 ```bash
