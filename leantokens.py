@@ -732,6 +732,14 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
             pass
 
         def _forward(self):
+            if self.path == "/leantokens/health":
+                out = json.dumps({"ok": True, "pid": os.getpid()}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+                return
             n = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(n) if n else b""
             anthropic = self.path.startswith("/v1/messages") or "anthropic-version" in self.headers
@@ -1871,6 +1879,172 @@ def cmd_map(argv):
     return 0
 
 
+# ---------------------------------------------------------------------------
+# desktop: run the proxy in the background (macOS) and point Claude Code at it.
+# Works for Claude Code in the desktop app, which `wrap` can't reach.
+# ---------------------------------------------------------------------------
+
+DESKTOP_LABEL = "com.leantokens.proxy"
+DESKTOP_PORT = 8787
+DESKTOP_URL = "http://127.0.0.1:%d" % DESKTOP_PORT
+DESKTOP_STATE = os.path.join(os.path.expanduser("~"), ".leantokens", "desktop.json")
+DESKTOP_PLIST = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", DESKTOP_LABEL + ".plist")
+
+
+def _healthy(timeout=1.0):
+    try:
+        with urllib.request.urlopen(DESKTOP_URL + "/leantokens/health", timeout=timeout) as r:
+            return json.loads(r.read()).get("ok") is True
+    except (OSError, ValueError):
+        return False
+
+
+def _desktop_state():
+    try:
+        with open(DESKTOP_STATE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {"settings": []}
+
+
+def _save_desktop_state(state):
+    os.makedirs(os.path.dirname(DESKTOP_STATE), exist_ok=True)
+    with open(DESKTOP_STATE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def _plist(mode_args):
+    args = [sys.executable, os.path.abspath(__file__), "proxy", "--port", str(DESKTOP_PORT), "--quiet"] + mode_args
+    log = os.path.join(os.path.expanduser("~"), ".leantokens", "proxy.log")
+    items = "".join("    <string>%s</string>\n" % a.replace("&", "&amp;").replace("<", "&lt;") for a in args)
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+            '<plist version="1.0">\n<dict>\n'
+            '  <key>Label</key><string>%s</string>\n'
+            '  <key>ProgramArguments</key>\n  <array>\n%s  </array>\n'
+            '  <key>RunAtLoad</key><true/>\n'
+            '  <key>KeepAlive</key><true/>\n'
+            '  <key>ThrottleInterval</key><integer>1</integer>\n'
+            '  <key>StandardErrorPath</key><string>%s</string>\n'
+            '  <key>StandardOutPath</key><string>%s</string>\n'
+            '</dict>\n</plist>\n') % (DESKTOP_LABEL, items, log, log)
+
+
+def _launchctl(*args):
+    return subprocess.run(["launchctl"] + list(args), capture_output=True, text=True, timeout=30)
+
+
+def _settings_path(target):
+    if target == "global":
+        return os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
+    return os.path.join(os.path.abspath(os.path.expanduser(target)), ".claude", "settings.local.json")
+
+
+def _set_base_url(path, url):
+    """Set (url) or remove (None) ANTHROPIC_BASE_URL in a Claude Code settings file."""
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except OSError:
+        data = {}
+    except ValueError:
+        raise RuntimeError("%s is not valid JSON; fix it first" % path)
+    env = data.setdefault("env", {})
+    if url:
+        if env.get("ANTHROPIC_BASE_URL") not in (None, url):
+            raise RuntimeError("%s already sets ANTHROPIC_BASE_URL=%s; leaving it alone" % (path, env["ANTHROPIC_BASE_URL"]))
+        env["ANTHROPIC_BASE_URL"] = url
+    else:
+        if env.get("ANTHROPIC_BASE_URL") != DESKTOP_URL:
+            return False
+        del env["ANTHROPIC_BASE_URL"]
+        if not env:
+            del data["env"]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        shutil.copy2(path, path + ".bak")
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    return True
+
+
+def desktop_on(target, mode_args):
+    if sys.platform != "darwin":
+        raise RuntimeError("`leantokens desktop` uses macOS launchd; on other systems run `leantokens proxy` yourself")
+    os.makedirs(os.path.dirname(DESKTOP_PLIST), exist_ok=True)
+    with open(DESKTOP_PLIST, "w") as f:
+        f.write(_plist(mode_args))
+    domain = "gui/%d" % os.getuid()
+    _launchctl("bootout", domain + "/" + DESKTOP_LABEL)
+    r = _launchctl("bootstrap", domain, DESKTOP_PLIST)
+    for _ in range(50):
+        if _healthy(0.5):
+            break
+        time.sleep(0.2)
+    else:
+        raise RuntimeError("the background proxy did not start (launchctl: %s). See ~/.leantokens/proxy.log"
+                           % (r.stderr.strip() or "no error"))
+    path = _settings_path(target)
+    _set_base_url(path, DESKTOP_URL)
+    state = _desktop_state()
+    if path not in state["settings"]:
+        state["settings"].append(path)
+    state["mode"] = mode_args
+    _save_desktop_state(state)
+    return path
+
+
+def desktop_off():
+    state = _desktop_state()
+    changed = [p for p in state.get("settings", []) if _set_base_url(p, None)]
+    if sys.platform == "darwin":
+        _launchctl("bootout", "gui/%d/%s" % (os.getuid(), DESKTOP_LABEL))
+    if os.path.exists(DESKTOP_PLIST):
+        os.remove(DESKTOP_PLIST)
+    _save_desktop_state({"settings": []})
+    return changed
+
+
+def cmd_desktop(argv):
+    ap = argparse.ArgumentParser(prog="leantokens desktop",
+                                 description="Compress Claude Code sessions from the desktop app (macOS).")
+    ap.add_argument("action", choices=["on", "off", "status"])
+    ap.add_argument("target", nargs="?", default=".",
+                    help="project folder to turn on (default: current folder), or `global` for every project")
+    ap.add_argument("--smart", action="store_true", help="use smart mode in the background proxy")
+    a = ap.parse_args(argv)
+    if a.action == "on":
+        try:
+            path = desktop_on(a.target, ["--smart"] if a.smart else [])
+        except RuntimeError as e:
+            print("leantokens: %s" % e, file=sys.stderr)
+            return 1
+        print("On. The background proxy runs at %s and starts at login.\n"
+              "Claude Code now uses it via %s.\n"
+              "Start a new Claude Code session (existing ones keep their old settings).\n"
+              "Undo everything: leantokens desktop off" % (DESKTOP_URL, path))
+        return 0
+    if a.action == "off":
+        changed = desktop_off()
+        print("Off. Background proxy stopped and removed.%s" % (
+            "" if not changed else "\nRemoved ANTHROPIC_BASE_URL from:\n  " + "\n  ".join(changed)))
+        print("Start a new Claude Code session to go back to connecting directly.")
+        return 0
+    state = _desktop_state()
+    up = _healthy()
+    print("background proxy: %s" % ("running at %s" % DESKTOP_URL if up else
+                                     "NOT running" + (" (installed but down: Claude Code sessions pointed at it "
+                                                      "will fail; run `leantokens desktop on` or `off`)"
+                                                      if os.path.exists(DESKTOP_PLIST) else "")))
+    print("mode: %s" % (" ".join(state.get("mode") or []) or "lossless"))
+    for p in state.get("settings", []):
+        print("used by: %s" % p)
+    if not state.get("settings"):
+        print("used by: nothing (run `leantokens desktop on PROJECT` or `on global`)")
+    return 0 if (up or not state.get("settings")) else 1
+
+
 USAGE = """usage:
   leantokens wrap claude [args...]       run Claude Code through the compressor
   leantokens wrap codex [args...]        run OpenAI Codex CLI (API key auth)
@@ -1891,6 +2065,11 @@ Claude Code habits:
   leantokens tune claude [PATH] --apply  add safe token-saving Claude Code settings
   leantokens usage [--days N] [--by day|model|project]  Claude Code token use from its local logs
   leantokens map [PATH...] [--copy]      compact outline of a codebase (classes, functions, lines)
+
+Claude Code in the desktop app (macOS):
+  leantokens desktop on [PROJECT|global] run the proxy in the background and point Claude Code at it
+  leantokens desktop status              is it running, and which settings use it
+  leantokens desktop off                 stop it and undo every settings change
   leantokens prompt.txt [-l high]        compress a prompt file (- for stdin)
 
 wrap and proxy options:
@@ -1916,9 +2095,9 @@ def main(argv=None):
         return cmd_eval(argv[1:])
     if argv and argv[0] == "show":
         return cmd_show(argv[1:])
-    if argv and argv[0] in ("doctor", "clip", "pack", "count", "audit", "tune", "usage", "map"):
+    if argv and argv[0] in ("doctor", "clip", "pack", "count", "audit", "tune", "usage", "map", "desktop"):
         return {"doctor": cmd_doctor, "clip": cmd_clip, "pack": cmd_pack, "count": cmd_count,
-                "audit": cmd_audit, "tune": cmd_tune, "usage": cmd_usage, "map": cmd_map}[argv[0]](argv[1:])
+                "audit": cmd_audit, "tune": cmd_tune, "usage": cmd_usage, "map": cmd_map, "desktop": cmd_desktop}[argv[0]](argv[1:])
     if argv and argv[0] == "proxy":
         ap = argparse.ArgumentParser(prog="leantokens proxy")
         ap.add_argument("--port", type=int, default=8787)
@@ -1927,12 +2106,17 @@ def main(argv=None):
         ap.add_argument("--smart", action="store_true", help="reference repeated lines, shorten huge outputs")
         ap.add_argument("--cache", action="store_true", help="add Anthropic prompt-caching markers")
         ap.add_argument("--record", metavar="FOLDER", help="save original requests for `leantokens eval`")
+        ap.add_argument("--quiet", action="store_true", help="don't print a line per request")
         a = ap.parse_args(argv[1:])
 
         def log(row):
             print("[%s] %s" % (row["p"], _fmt_summary(summarize([row]))), file=sys.stderr, flush=True)
 
-        srv = start_proxy(a.port, a.upstream, log, a.lossy, a.record, a.smart, a.cache)
+        own = ("127.0.0.1:%d" % a.port, "localhost:%d" % a.port)
+        for prov, base in list(UPSTREAMS.items()):
+            if urllib.parse.urlsplit(base).netloc in own:  # would forward to itself forever
+                UPSTREAMS[prov] = {"anthropic": "https://api.anthropic.com", "openai": "https://api.openai.com"}[prov]
+        srv = start_proxy(a.port, a.upstream, None if a.quiet else log, a.lossy, a.record, a.smart, a.cache)
         url = "http://127.0.0.1:%d" % srv.server_address[1]
         print("leantokens proxy on %s\n  Anthropic: ANTHROPIC_BASE_URL=%s\n  OpenAI:    OPENAI_BASE_URL=%s/v1"
               % (url, url, url), file=sys.stderr, flush=True)

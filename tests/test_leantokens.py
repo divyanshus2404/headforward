@@ -383,6 +383,49 @@ class UsageMapTests(unittest.TestCase):
             self.assertLess(len(small), len(full) / 5)
 
 
+class DesktopTests(unittest.TestCase):
+    def test_health_endpoint_is_local(self):
+        px = lt.start_proxy(upstream="http://127.0.0.1:9")  # nothing listens on port 9
+        try:
+            c = http.client.HTTPConnection("127.0.0.1", px.server_address[1])
+            c.request("GET", "/leantokens/health")
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            self.assertTrue(json.loads(r.read())["ok"])
+        finally:
+            px.shutdown()
+
+    def test_settings_on_off_round_trip(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".claude", "settings.local.json")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w") as f:
+                json.dump({"model": "opus", "env": {"BASH_MAX_OUTPUT_LENGTH": "30000"}}, f)
+            lt._set_base_url(path, lt.DESKTOP_URL)
+            on = json.load(open(path))
+            self.assertEqual(on["env"]["ANTHROPIC_BASE_URL"], lt.DESKTOP_URL)
+            self.assertEqual(on["model"], "opus")
+            self.assertTrue(lt._set_base_url(path, None))
+            self.assertEqual(json.load(open(path)), {"model": "opus", "env": {"BASH_MAX_OUTPUT_LENGTH": "30000"}})
+
+    def test_never_overwrites_another_base_url(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            with open(path, "w") as f:
+                json.dump({"env": {"ANTHROPIC_BASE_URL": "https://gateway.example.com"}}, f)
+            with self.assertRaises(RuntimeError):
+                lt._set_base_url(path, lt.DESKTOP_URL)
+            self.assertFalse(lt._set_base_url(path, None))  # off leaves someone else's URL alone
+            self.assertEqual(json.load(open(path))["env"]["ANTHROPIC_BASE_URL"], "https://gateway.example.com")
+
+    def test_plist_runs_this_file_quietly(self):
+        x = lt._plist(["--smart"])
+        self.assertIn("<string>proxy</string>", x)
+        self.assertIn("<string>--quiet</string>", x)
+        self.assertIn("<string>--smart</string>", x)
+        self.assertIn("<key>KeepAlive</key><true/>", x)
+
+
 class CacheTests(unittest.TestCase):
     def test_adds_markers(self):
         b = {"system": "sys", "messages": [{"role": "user", "content": "hi"}]}

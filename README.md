@@ -120,6 +120,19 @@ leantokens pack src/ --outline   # signatures only for code, full text for every
 
 `map` describes the 85 KB leantokens source in about 1,400 tokens. Paste it, or put it in `CLAUDE.md`, so Claude can go straight to the right function. `pack --outline` halved the token cost of packing this repository (72,758 to 35,026), and `pack` now lists the most expensive files.
 
+### Claude Code in the desktop app (macOS)
+
+`wrap` only reaches Claude Code started from a terminal. For the desktop app, run the proxy in the background and point a project (or every project) at it:
+
+```bash
+leantokens desktop on ~/code/my-app   # one project first
+leantokens desktop status             # running? which settings use it?
+leantokens desktop on global          # every project, once you trust it
+leantokens desktop off                # stop it and undo every settings change
+```
+
+The proxy runs as a login item (launchd), restarts within about 2 seconds if it stops, and answers a health check at `http://127.0.0.1:8787/leantokens/health`. `on` only edits settings after the proxy is confirmed running, never replaces an `ANTHROPIC_BASE_URL` you set yourself, and keeps a backup. If the proxy is down, Claude Code sessions pointed at it fail until you run `desktop on` or `desktop off`.
+
 ### Check your setup
 
 ```bash
