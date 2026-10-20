@@ -4,6 +4,7 @@ import io
 import json
 import os
 import random
+import re
 import sys
 import tempfile
 import threading
@@ -452,12 +453,70 @@ class DesktopTests(unittest.TestCase):
         self.assertIn("<key>KeepAlive</key><true/>", x)
 
 
+class CompactTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_blob, lt.BLOB_DIR = lt.BLOB_DIR, self.tmp.name
+
+    def tearDown(self):
+        lt.BLOB_DIR = self.old_blob
+        self.tmp.cleanup()
+
+    def check(self, text, facts, gone=()):
+        out = lt.filter_output(text)
+        self.assertLess(len(out), len(text))
+        for f in facts:
+            self.assertIn(f, out)
+        for g in gone:
+            self.assertNotIn(g, out)
+        blob = re.search(r"leantokens show (\w+)", out).group(1)
+        with open(os.path.join(lt.BLOB_DIR, blob + ".txt")) as f:
+            self.assertEqual(f.read(), text)  # the full output is recoverable
+        return out
+
+    def test_git_log(self):
+        text = "\n".join(
+            "commit %s\nAuthor: Ana Ruiz <ana@example.com>\nDate:   Mon Oct 20 15:4%d:21 2026 +0530\n\n"
+            "    Fix refund rounding in order %d\n\n app/orders.py | 1%d ++++++++------\n 1 file changed\n"
+            % (("%x" % (0xabc0 + i)) * 10, i, i, i) for i in range(5))
+        out = self.check(text, ["author of every commit: Ana Ruiz <ana@example.com>", "2026-10-20 15:43",
+                                "Fix refund rounding in order 3", "app/orders.py | 13", "1 file changed"],
+                         gone=["++++", "Author:"])
+        self.assertEqual(out.count("commit "), 5)
+
+    def test_ls_long(self):
+        text = "total 96\n" + "\n".join("-rw-r--r--@  1 ana  staff  %5d Oct 19 21:0%d file_%02d.py" % (100 * i, i % 10, i)
+                                         for i in range(12)) + "\ndrwxr-xr-x  4 ana  staff   128 Oct 19 21:01 src"
+        self.check(text, ["owner of every entry: ana:staff", "file_11.py", "1100 Oct 19 21:01", "src/"],
+                   gone=["total 96", "ana  staff"])
+
+    def test_grep_groups_by_file(self):
+        text = "\n".join("src/%s.py:%d:        if order.total < 0:  # TODO refund" % (f, n)
+                         for f in ("orders", "refunds") for n in range(10, 70, 6))
+        out = self.check(text, ["src/orders.py\n  10:if order.total", "src/refunds.py", "64:if order.total"])
+        self.assertEqual(out.count("src/orders.py"), 1)
+
+    def test_timestamped_log_keeps_every_distinct_line(self):
+        lines = ["2026-10-20 17:17:%02d.%03d Df bluetoothd[396:1e%03x] Scan matched device %d" % (i % 60, i, i, i)
+                 for i in range(40)]
+        lines.insert(20, "2026-10-20 17:17:20.500 E  sharingd[77:9] ERROR: AirDrop handshake failed (code -36)")
+        out = self.check("\n".join(lines), ["every line is from 2026-10-20", "Scan matched device 0  [x40 similar",
+                                             "ERROR: AirDrop handshake failed (code -36)"])
+        self.assertNotIn("Scan matched device 7", out)
+
+    def test_other_output_is_left_alone(self):
+        text = "\n".join("line %d of a normal program output" % i for i in range(40))
+        self.assertEqual(lt._compact_shapes(text), text)
+
+
 class HookTests(unittest.TestCase):
     def test_rewrites_only_noisy_commands(self):
         for c in ["npm test", "npm install", "pytest -q", "python3 -m unittest discover -v", "cargo build",
-                  "CI=1 npm run test:unit", "go test ./...", "pip install -r requirements.txt", "make"]:
+                  "CI=1 npm run test:unit", "go test ./...", "pip install -r requirements.txt", "make",
+                  "git log --stat", "ls -la", "grep -rn TODO src", "rg TODO", "log show --last 1m",
+                  "grep -n 'def ' leantokens.py"]:
             self.assertIsNotNone(lt.rewrite_command(c), c)
-        for c in ["ls -la", "cat package.json", "git diff", "npm test &", "cd app && npm test",
+        for c in ["ls", "git status", "cat package.json", "git diff", "npm test &", "cd app && npm test",
                   "npm test | tail -5", "python3 script.py", "pytest <<EOF\nx\nEOF", "echo npm test"]:
             self.assertIsNone(lt.rewrite_command(c), c)
 

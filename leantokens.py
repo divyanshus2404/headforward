@@ -21,6 +21,7 @@ Prompt levels:
   max     + strip comment-only lines and blank lines inside code blocks
 """
 import argparse
+import datetime
 import difflib
 import hashlib
 import http.client
@@ -296,6 +297,8 @@ def compress_tool(text, lossy=False):
             return out if len(out) < len(text) else text
         except ValueError:
             pass
+    if lossy:
+        s = _compact_shapes(s)
     s = LINE_NO.sub(r"\1\2", s)
     lines = _collapse_repeats([l.rstrip() for l in s.split("\n")])
     if lossy:
@@ -517,6 +520,135 @@ def _filter_noise(text):
             out.extend(lines[i:j])
         i = j
     return "\n".join(out)
+
+
+# Shape-aware compaction for outputs agents read a lot: git log, `ls -l`,
+# grep matches and timestamped logs. Each keeps every distinct fact and drops
+# only what repeats or can be derived; the full output is saved for `show`.
+
+_GIT_COMMIT = re.compile(r"^commit ([0-9a-f]{40})\b(.*)$")
+_GIT_STAT = re.compile(r"^ (\S.*?)\s+\|\s+(\d+|Bin [^|]*?)\s*[+-]*$")
+_LS_LONG = re.compile(r"^([dlcbps-][rwxsStT-]{9})[@+.]?\s+\d+\s+(\S+)\s+(\S+)\s+"
+                      r"(\d+(?:,\s*\d+)?)\s+(\w{3}\s+\d{1,2}\s+[\d:]{4,5})\s+(.*)$")
+_GREP_FILE = re.compile(r"^([^\s:][^:]*):(\d+)([:-])(.*)$")
+_GREP_NUM = re.compile(r"^(\d+)([:-])(.*)$")
+_LOG_TS = re.compile(r"^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:[+-]\d{2}:?\d{2}|Z)?\s+")
+_LOG_VARYING = re.compile(r"\b0x[0-9a-f]+\b|\b(?=[0-9a-f]*\d)[0-9a-f]{4,}\b|\d+", re.I)
+
+
+def _compact_git_log(lines):
+    if sum(1 for l in lines if _GIT_COMMIT.match(l)) < 3:
+        return None
+    authors = {l[7:].strip() for l in lines if l.startswith("Author:")}
+    one_author = len(authors) == 1
+    out = ["author of every commit: %s" % authors.pop()] if one_author else []
+    for l in lines:
+        m = _GIT_COMMIT.match(l)
+        if m:
+            out.append("commit %s%s" % (m.group(1)[:10], m.group(2)))
+        elif l.startswith("Author:"):
+            if not one_author:
+                out.append("  by " + l[7:].strip())
+        elif l.startswith("Date:"):
+            raw = l[5:].strip()
+            try:
+                raw = datetime.datetime.strptime(raw, "%a %b %d %H:%M:%S %Y %z").strftime("%Y-%m-%d %H:%M")
+            except ValueError:
+                pass
+            out[-1] += "  " + raw
+        elif _GIT_STAT.match(l):
+            m = _GIT_STAT.match(l)
+            out.append("  %s | %s" % (m.group(1), m.group(2)))
+        elif l.startswith("    "):
+            out.append("  " + l[4:])
+        elif l.strip():
+            out.append(l)
+    return out
+
+
+def _compact_ls(lines):
+    rows = [(l, _LS_LONG.match(l)) for l in lines]
+    found = [m for _, m in rows if m]
+    if len(found) < 8:
+        return None
+    owners = {(m.group(2), m.group(3)) for m in found}
+    one_owner = len(owners) == 1
+    out = ["owner of every entry: %s:%s" % owners.pop()] if one_owner else []
+    for l, m in rows:
+        if not m:
+            if not re.match(r"^total \d+$", l):
+                out.append(l)
+            continue
+        perms, owner, group, size, date, name = m.groups()
+        who = "" if one_owner else " %s:%s" % (owner, group)
+        out.append("%s%s %s %s %s%s" % (perms, who, size, re.sub(r"\s+", " ", date), name,
+                                        "/" if perms[0] == "d" and not name.endswith("/") else ""))
+    return out
+
+
+def _compact_grep(lines):
+    body = [l for l in lines if l]
+    if len(body) < 10:
+        return None
+    with_file = sum(1 for l in body if _GREP_FILE.match(l))
+    with_num = sum(1 for l in body if _GREP_NUM.match(l))
+    if max(with_file, with_num) < 0.9 * len(body):
+        return None
+    out, cur = [], None
+    for l in lines:
+        m = _GREP_FILE.match(l) if with_file >= with_num else None
+        if m:
+            path, n, sep, text = m.groups()
+            if path != cur:
+                out.append(path)
+                cur = path
+            out.append("  %s%s%s" % (n, sep, text.strip()))
+            continue
+        m = _GREP_NUM.match(l)
+        out.append("%s%s%s" % (m.group(1), m.group(2), m.group(3).strip()) if m else l)
+    return out
+
+
+def _compact_log(lines):
+    stamps = [_LOG_TS.match(l) for l in lines]
+    if len(lines) < 30 or sum(1 for m in stamps if m) < 0.5 * len(lines):
+        return None
+    dates = {m.group(1) for m in stamps if m}
+    one_day = len(dates) == 1
+    out = ["every line is from %s" % next(iter(dates))] if one_day else []
+    first, count, last = {}, {}, {}
+    for l, m in zip(lines, stamps):
+        body = l[m.end():] if m else l
+        key = _LOG_VARYING.sub("#", body)
+        if m and key in first:
+            count[key] += 1
+            last[key] = m.group(2)
+            continue
+        if m:
+            first[key], count[key], last[key] = len(out), 1, m.group(2)
+            out.append("%s %s" % (m.group(2) if one_day else m.group(1) + " " + m.group(2), body))
+        else:
+            out.append(l)
+    for key, i in first.items():
+        if count[key] > 1:
+            out[i] += "  [x%d similar, last at %s]" % (count[key], last[key])
+    return out
+
+
+def _compact_shapes(text):
+    """Compact git log, `ls -l`, grep and timestamped log output; the full text stays readable via show."""
+    lines = text.split("\n")
+    # Logs before grep: "2026-10-20 17:17:00" would otherwise read as file:line:.
+    for compact in (_compact_git_log, _compact_ls, _compact_log, _compact_grep):
+        out = compact(lines)
+        if out is None:
+            continue
+        short = "\n".join(out)
+        if len(short) > 0.9 * len(text):
+            return text
+        blob = _save_blob(text)
+        return short + "\n[compacted; full output: leantokens show %s]" % blob if blob else text
+    return text
 
 
 def _expandable(text):
@@ -2131,8 +2263,10 @@ NOISY = re.compile(
     r"|make\b|mvn\b|\./mvnw\b|gradle\b|\./gradlew\b"
     r"|docker\s+(?:build|pull|compose\s+(?:build|pull|up))\b"
     r"|bundle\s+install\b|composer\s+install\b|brew\s+(?:install|upgrade)\b"
+    r"|git\s+log\b|ls\s+-[a-zA-Z]*l|grep\s|rg\s|log\s+show\b"
     r")")
-UNSAFE = re.compile(r"<<|(^|[^&|])&\s*$|\bcd\s|leantokens|\|\s*(?:tee|less|more|head|tail)\b")
+UNSAFE = re.compile(r"<<|(^|[^&|])&\s*$|\bcd\s|leantokens(?:\.py)?\s+(?:filter|hook-bash)\b"
+                    r"|\|\s*(?:tee|less|more|head|tail)\b")
 
 
 def filter_output(text):
@@ -2143,6 +2277,7 @@ def filter_output(text):
     """
     s = ANSI.sub("", text).replace("\r\n", "\n")
     s = "\n".join(l.split("\r")[-1] for l in s.split("\n"))  # progress bars redraw with \r
+    s = _compact_shapes(s)
     s = _filter_noise(s)
     lines = [l.rstrip() for l in s.split("\n")]
     out, prev, n = [], None, 0
