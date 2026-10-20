@@ -2,100 +2,167 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Schibsted+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
-/* Layout: an ink-dark hero band holding the one command and a live trace, then a light working page:
-   playground, ways to run it, install, limits. Redline motif: cut text is struck in red. */
+/* Layout: a dark "terminal" hero where a real build log gets struck through line by line,
+   then a light working page: where it runs (matrix), the gateway chain, how it saves,
+   the playground, install, limits. Motif: redline cuts on kept text, a meter of bytes. */
 :root {
-  --bg: #f3f5f8;
+  --bg: #f3f5f9;
   --surface: #ffffff;
-  --ink: #141a26;
-  --muted: #5b6577;
-  --line: #d8dde6;
-  --accent: #2d4bd8;
+  --sunk: #eaeef5;
+  --ink: #111726;
+  --muted: #576276;
+  --line: #d9dfe9;
+  --accent: #3045d1;
+  --accent-soft: #e4e8ff;
   --accent-ink: #ffffff;
-  --cut: #c4322b;
-  --cut-bg: #fbe5e3;
-  --band: #10162a;
-  --band-ink: #eef1f8;
-  --band-muted: #9aa6c2;
-  --band-line: #26304a;
-  --band-accent: #93a6ff;
-  --band-cut: #ff8f86;
-  --term-bg: #151b29;
-  --term-fg: #dfe5f2;
-  --term-dim: #8a94ab;
+  --cut: #c8352c;
+  --cut-bg: #fbe4e1;
+  --keep: #13804f;
+  --keep-bg: #dcf3e7;
+  --band: #0d1222;
+  --band-2: #141b31;
+  --band-ink: #eef1f9;
+  --band-muted: #9aa5c1;
+  --band-line: #252e4a;
+  --band-accent: #9aaaff;
+  --band-cut: #ff8d84;
+  --band-keep: #6fe0a8;
+  --term-bg: #121829;
+  --term-fg: #dee4f2;
+  --term-dim: #8590a9;
   --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
-  --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
+  --body: "Schibsted Grotesk", system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
-    --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
-    --band: #080b14; --band-line: #1f2840; --term-bg: #0a0d14; color-scheme: dark;
+    --bg: #0e121b; --surface: #161c29; --sunk: #121723; --ink: #e8ecf5; --muted: #99a3b8; --line: #283043;
+    --accent: #95a6ff; --accent-soft: #232b4d; --accent-ink: #0e121b;
+    --cut: #ff8a7f; --cut-bg: #3b1d1d; --keep: #6ad6a0; --keep-bg: #15301f;
+    --band: #070a12; --band-2: #0e1324; --band-line: #1d2540; --term-bg: #0a0e17; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
-  --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
-  --band: #080b14; --band-line: #1f2840; --term-bg: #0a0d14; color-scheme: dark;
+  --bg: #0e121b; --surface: #161c29; --sunk: #121723; --ink: #e8ecf5; --muted: #99a3b8; --line: #283043;
+  --accent: #95a6ff; --accent-soft: #232b4d; --accent-ink: #0e121b;
+  --cut: #ff8a7f; --cut-bg: #3b1d1d; --keep: #6ad6a0; --keep-bg: #15301f;
+  --band: #070a12; --band-2: #0e1324; --band-line: #1d2540; --term-bg: #0a0e17; color-scheme: dark;
 }
 * { box-sizing: border-box; }
-body { background: var(--bg); color: var(--ink); font: 400 1rem/1.55 var(--body); }
+body { background: var(--bg); color: var(--ink); font: 400 1rem/1.6 var(--body); }
 .in {
-  max-width: 1120px; margin: 0 auto;
+  max-width: 1140px; margin: 0 auto;
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
-h2 { font-weight: 800; font-size: clamp(1.6rem, 3.4vw, 2.2rem); letter-spacing: -0.015em; line-height: 1.1; }
-h3 { font-weight: 800; font-size: 1.15rem; }
+h2 { font-weight: 800; font-size: clamp(1.65rem, 3.4vw, 2.35rem); letter-spacing: -0.02em; line-height: 1.08; }
+h3 { font-weight: 700; font-size: 1.12rem; letter-spacing: -0.005em; }
 p { margin: 0; }
-code { font-family: var(--mono); font-size: 0.9em; }
-.eyebrow { font: 600 0.75rem var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
-.lede { max-width: 62ch; color: var(--muted); font-size: 1.08rem; }
+code { font-family: var(--mono); font-size: 0.88em; }
+p code, li code, td code { background: var(--sunk); border: 1px solid var(--line); padding: 1px 5px; border-radius: 5px; }
+.eyebrow { font: 600 0.72rem var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+.lede { max-width: 64ch; color: var(--muted); font-size: 1.06rem; }
 button { font-family: var(--body); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* Hero band */
-.hero { background: var(--band); color: var(--band-ink); }
-.hero .in { padding-block: 56px 64px; display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; }
-.hero .copy { display: grid; gap: 22px; min-width: 0; }
+/* ---------- Hero ---------- */
+.hero { background: radial-gradient(1200px 500px at 85% -10%, var(--band-2), transparent 70%), var(--band); color: var(--band-ink); }
+.hero .in { padding-block: 64px 72px; display: grid; grid-template-columns: 1fr 1.02fr; gap: 56px; align-items: center; }
+.hero .copy { display: grid; gap: 24px; min-width: 0; }
 .hero .eyebrow { color: var(--band-accent); }
-.hero h1 { font-weight: 800; font-size: clamp(2.4rem, 6vw, 4.2rem); line-height: 0.98; letter-spacing: -0.03em; }
-.hero h1 s { color: var(--band-cut); font-weight: 500; text-decoration-thickness: 0.07em; }
-.hero p { color: var(--band-muted); font-size: 1.1rem; max-width: 50ch; }
-.cmd { display: flex; align-items: center; gap: 10px; background: #1b2338; border: 1px solid var(--band-line); border-radius: 10px; padding: 6px 6px 6px 16px; min-width: 0; }
+.hero h1 { font-weight: 800; font-size: clamp(2.5rem, 6.2vw, 4.6rem); line-height: 0.95; letter-spacing: -0.035em; }
+.hero h1 s { color: var(--band-cut); font-weight: 500; text-decoration-thickness: 0.08em; }
+.hero h1 em { font-style: normal; color: var(--band-keep); }
+.hero p { color: var(--band-muted); font-size: 1.1rem; max-width: 48ch; }
+.cmd { display: flex; align-items: center; gap: 10px; background: var(--band-2); border: 1px solid var(--band-line); border-radius: 12px; padding: 6px 6px 6px 16px; min-width: 0; }
 .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--band-ink); font-size: 0.95rem; }
-.cmd code b { color: var(--band-accent); font-weight: 600; }
-.cmd button, .term .copy { font-weight: 600; font-size: 0.8rem; background: #2c3755; color: #eef1f8; border: 0; padding: 8px 12px; border-radius: 7px; cursor: pointer; flex: none; }
+.cmd code i { font-style: normal; color: var(--band-muted); }
+.cmd code b { color: var(--band-accent); font-weight: 500; }
+.cmd button, .term .copy { font-weight: 600; font-size: 0.8rem; background: var(--band-line); color: var(--band-ink); border: 0; padding: 8px 12px; border-radius: 8px; cursor: pointer; flex: none; }
+.cmd button:hover, .term .copy:hover { background: var(--band-accent); color: var(--band); }
 .agents { display: flex; flex-wrap: wrap; gap: 8px; }
-.agents span { font: 500 0.8rem var(--mono); color: var(--band-muted); border: 1px solid var(--band-line); padding: 4px 10px; border-radius: 99px; }
+.agents span { font: 500 0.78rem var(--mono); color: var(--band-muted); border: 1px solid var(--band-line); padding: 4px 10px; border-radius: 99px; }
 
-.trace { background: #0b1020; border: 1px solid var(--band-line); border-radius: 12px; font: 400 0.82rem/1.7 var(--mono); color: #cfd6e6; overflow: hidden; min-width: 0; }
-.trace .top { display: flex; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--band-line); color: var(--band-muted); font-size: 0.75rem; }
-.trace .body { padding: 14px; overflow-x: auto; }
-.trace .row { display: grid; grid-template-columns: 7.5ch 1fr; gap: 12px; white-space: nowrap; }
-.trace .k { color: var(--band-accent); }
-.trace .dim { color: #6f7a94; }
-.trace .bar { height: 6px; border-radius: 3px; background: #26304a; margin: 10px 0 4px; overflow: hidden; }
-.trace .bar i { display: block; height: 100%; width: 28%; background: var(--band-accent); border-radius: 3px; }
-.trace .big { font: 800 1.9rem/1 var(--display); color: var(--band-ink); }
+.shot { background: var(--term-bg); border: 1px solid var(--band-line); border-radius: 14px; overflow: hidden; min-width: 0; box-shadow: 0 30px 80px -30px #000; }
+.shot .top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--band-line); color: var(--band-muted); font: 500 0.74rem var(--mono); }
+.shot .top i { width: 10px; height: 10px; border-radius: 50%; background: var(--band-line); }
+.shot .top span { margin-left: 6px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log { padding: 14px 16px 6px; font: 400 0.8rem/1.75 var(--mono); color: var(--term-fg); overflow-x: auto; }
+.log div { white-space: nowrap; }
+.log .p { color: var(--band-accent); }
+.log .x { color: var(--band-cut); text-decoration: line-through; text-decoration-color: var(--band-cut); opacity: 0.75; }
+.log .k { color: var(--band-keep); }
+.log .d { color: var(--term-dim); }
+.meter { display: grid; gap: 10px; padding: 14px 16px 18px; border-top: 1px dashed var(--band-line); }
+.meter .row { display: grid; grid-template-columns: 9ch 1fr auto; gap: 12px; align-items: center; font: 500 0.75rem var(--mono); color: var(--band-muted); }
+.meter .track { height: 8px; background: var(--band-2); border-radius: 4px; overflow: hidden; }
+.meter .track b { display: block; height: 100%; border-radius: 4px; }
+.meter .raw b { width: 100%; background: var(--band-cut); }
+.meter .lean b { width: 0.6%; min-width: 4px; background: var(--band-keep); }
+.meter .n { font-variant-numeric: tabular-nums; color: var(--band-ink); }
+.meter .sum { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.meter .sum strong { font: 800 2.2rem/1 var(--display); color: var(--band-ink); letter-spacing: -0.02em; }
+.meter .sum span { font: 400 0.78rem/1.4 var(--mono); color: var(--band-muted); }
 
-/* Main */
-main .in { padding-block: 64px 72px; display: grid; gap: 72px; }
-section { display: grid; gap: 20px; min-width: 0; }
+/* ---------- Main ---------- */
+main .in { padding-block: 72px 88px; display: grid; gap: 88px; }
+section { display: grid; gap: 22px; min-width: 0; }
 .head { display: grid; gap: 10px; }
 
-.facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.facts div { background: var(--surface); padding: 20px; display: grid; gap: 8px; align-content: start; }
+/* Where it runs: three routes + matrix */
+.routes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.route { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.route .tag { justify-self: start; font: 600 0.7rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); background: var(--accent-soft); padding: 3px 8px; border-radius: 6px; }
+.route p { color: var(--muted); font-size: 0.95rem; }
+.term { position: relative; background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 12px 14px; font: 400 0.8rem/1.7 var(--mono); overflow-x: auto; white-space: pre; }
+.term.has-copy { padding-right: 76px; }
+.term .c { color: var(--term-dim); }
+.term .copy { position: absolute; top: 7px; right: 7px; font-size: 0.72rem; padding: 6px 10px; }
+
+.matrix-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+table.matrix { width: 100%; border-collapse: collapse; font-size: 0.92rem; min-width: 620px; }
+.matrix th, .matrix td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--line); }
+.matrix tr:last-child td { border-bottom: 0; }
+.matrix thead th { font: 600 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--sunk); }
+.matrix tbody th { font-weight: 600; }
+.yes, .no, .part { display: inline-flex; align-items: center; gap: 6px; font: 600 0.78rem var(--mono); padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+.yes { color: var(--keep); background: var(--keep-bg); }
+.no { color: var(--muted); background: var(--sunk); }
+.part { color: var(--accent); background: var(--accent-soft); }
+
+/* Chain */
+.chain { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; display: grid; gap: 24px; }
+.hops { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; align-items: stretch; }
+.hop { position: relative; display: grid; gap: 6px; align-content: start; padding: 16px 18px; border: 1px solid var(--line); background: var(--bg); min-width: 0; }
+.hop:first-child { border-radius: 12px 0 0 12px; }
+.hop:last-child { border-radius: 0 12px 12px 0; }
+.hop + .hop { border-left: 0; }
+.hop + .hop::before { content: ""; position: absolute; left: -9px; top: 50%; width: 16px; height: 16px; background: var(--surface); border-top: 1px solid var(--line); border-right: 1px solid var(--line); transform: translateY(-50%) rotate(45deg); z-index: 1; }
+.hop b { font: 700 1rem var(--display); }
+.hop code { font-size: 0.75rem; color: var(--muted); overflow-wrap: anywhere; }
+.hop.lt { background: var(--accent-soft); border-color: var(--accent); }
+.hop.lt + .hop { border-left: 0; }
+.hop.lt b { color: var(--accent); }
+.hop span { font-size: 0.82rem; color: var(--muted); }
+.chain-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.chain-cols > div { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.chain-cols p { color: var(--muted); font-size: 0.95rem; }
+
+/* Facts */
+.facts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.facts div { background: var(--surface); padding: 22px; display: grid; gap: 8px; align-content: start; }
 .facts p { color: var(--muted); font-size: 0.95rem; }
+.facts .ex { font: 400 0.76rem/1.6 var(--mono); color: var(--muted); }
+.facts .ex s { color: var(--cut); text-decoration-color: var(--cut); }
+.facts .ex ins { color: var(--keep); text-decoration: none; }
 
 /* Playground */
-.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 9px; padding: 3px; gap: 2px; }
+.tool { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.bar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--sunk); }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 3px; gap: 2px; }
 .seg button { font-weight: 600; font-size: 0.85rem; border: 0; background: transparent; color: var(--muted); padding: 7px 13px; border-radius: 6px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
 .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; }
@@ -106,7 +173,7 @@ section { display: grid; gap: 20px; min-width: 0; }
 .pane + .pane { border-left: 1px solid var(--line); }
 .pane-head { display: flex; justify-content: space-between; gap: 8px; padding: 10px 16px 0; font: 600 0.72rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .pane-head .n { font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
-textarea, .out { width: 100%; min-height: 340px; max-height: 60vh; overflow: auto; margin: 0; padding: 12px 16px 16px; border: 0; background: transparent; color: var(--ink); font: 400 0.85rem/1.6 var(--mono); resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; }
+textarea, .out { width: 100%; min-height: 340px; max-height: 60vh; overflow: auto; margin: 0; padding: 12px 16px 16px; border: 0; background: transparent; color: var(--ink); font: 400 0.84rem/1.6 var(--mono); resize: vertical; white-space: pre-wrap; overflow-wrap: anywhere; }
 textarea:focus { outline: none; }
 .pane:focus-within .pane-head { color: var(--accent); }
 .out del { color: var(--cut); background: var(--cut-bg); text-decoration-color: var(--cut); }
@@ -117,41 +184,46 @@ textarea:focus { outline: none; }
 .stat.big b { color: var(--accent); }
 .stats .spacer { flex: 1; }
 .btn { font-weight: 600; font-size: 0.9rem; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 14px; border-radius: 8px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .note { font-size: 0.82rem; color: var(--muted); }
 .tool .note { padding: 0 16px 14px; }
 
-/* Ways to run */
-.ways { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
-.way { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
-.way p { color: var(--muted); font-size: 0.95rem; }
-.term { position: relative; background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 12px 14px; font: 400 0.8rem/1.65 var(--mono); overflow-x: auto; white-space: pre; }
-.term.has-copy { padding-right: 76px; }
-.term .c { color: var(--term-dim); }
-.term .copy { position: absolute; top: 7px; right: 7px; font-size: 0.72rem; padding: 6px 10px; }
-
-.steps { display: grid; gap: 16px; margin: 0; padding: 0; list-style: none; counter-reset: s; }
-.steps li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; counter-increment: s; }
-.steps li::before { content: counter(s); font: 600 0.8rem/28px var(--mono); text-align: center; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line); color: var(--muted); }
+/* Install */
+.steps { display: grid; gap: 18px; margin: 0; padding: 0; list-style: none; counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 30px 1fr; gap: 14px; counter-increment: s; }
+.steps li::before { content: counter(s); font: 700 0.8rem/30px var(--mono); text-align: center; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
 .steps li > div { display: grid; gap: 8px; min-width: 0; }
-details { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+details { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
-details pre { margin: 0; padding: 0 16px 16px; max-height: 420px; overflow: auto; font: 400 0.78rem/1.5 var(--mono); }
-.limits { margin: 0; padding-left: 1.2em; display: grid; gap: 8px; color: var(--muted); max-width: 75ch; }
+details pre { margin: 0; padding: 0 16px 16px; max-height: 420px; overflow: auto; font: 400 0.76rem/1.5 var(--mono); }
+.limits { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.limits li { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; color: var(--muted); font-size: 0.95rem; display: grid; gap: 4px; align-content: start; }
 .limits b { color: var(--ink); font-weight: 600; }
+footer { border-top: 1px solid var(--line); }
+footer .in { padding-block: 24px 32px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; color: var(--muted); font-size: 0.85rem; }
 
-@media (max-width: 900px) {
-  .hero .in { grid-template-columns: 1fr; gap: 36px; padding-block: 40px 48px; }
-  .ways, .facts { grid-template-columns: 1fr; }
+@media (max-width: 960px) {
+  .hero .in { grid-template-columns: 1fr; gap: 40px; padding-block: 44px 52px; }
+  .routes { grid-template-columns: 1fr; }
+  .hops { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hop, .hop:first-child, .hop:last-child { border-radius: 12px; border-left: 1px solid var(--line); }
+  .hop.lt { border-left-color: var(--accent); }
+  .hop + .hop::before { display: none; }
 }
 @media (max-width: 760px) {
-  .panes { grid-template-columns: 1fr; }
+  .panes, .facts, .chain-cols, .limits { grid-template-columns: 1fr; }
   .pane + .pane { border-left: 0; border-top: 1px solid var(--line); }
   textarea, .out { min-height: 220px; }
+  .chain { padding: 18px; }
 }
+@media (max-width: 420px) { .hops { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: no-preference) {
-  .trace .bar i { animation: fill 1.4s cubic-bezier(.2,.7,.2,1) both; }
-  @keyframes fill { from { width: 100%; } }
+  .meter .raw b { animation: grow 0.9s cubic-bezier(.2,.7,.2,1) both; }
+  .meter .lean b { animation: grow 0.9s 0.5s cubic-bezier(.2,.7,.2,1) both; }
+  .log .x { animation: strike 0.5s 0.3s ease-out both; }
+  @keyframes grow { from { transform: scaleX(0); transform-origin: left; } }
+  @keyframes strike { from { text-decoration-color: transparent; opacity: 1; } }
 }
 </style>
 
@@ -159,39 +231,114 @@ details pre { margin: 0; padding: 0 16px 16px; max-height: 420px; overflow: auto
   <div class="in">
     <div class="copy">
       <span class="eyebrow">leantokens · open source · one Python file</span>
-      <h1>Your agent reads <s>everything</s> what matters.</h1>
-      <p>Coding agents burn most of their tokens re-reading tool output: JSON from APIs, logs, file reads. leantokens sits between the agent and the model and shrinks that output before it is sent. You keep using Claude Code or Codex exactly as before.</p>
-      <div class="cmd"><code>leantokens <b>wrap claude</b></code><button id="copy-hero" data-copy="leantokens wrap claude">Copy</button></div>
-      <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Codex CLI</span><span>Aider</span><span>Anthropic SDK</span><span>OpenAI SDK</span></div>
+      <h1>Your agent reads <s>everything</s> <em>what matters.</em></h1>
+      <p>Coding agents spend most of their tokens re-reading tool output: build logs, test runs, JSON, file reads. leantokens shrinks that output before the model sees it. You keep using Claude Code exactly as before.</p>
+      <div class="cmd"><code><i>$</i> leantokens <b>hooks install global</b></code><button id="copy-hero" data-copy="leantokens hooks install global">Copy</button></div>
+      <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Claude desktop app</span><span>Codex CLI</span><span>Aider</span><span>Anthropic &amp; OpenAI SDKs</span></div>
     </div>
-    <div class="trace" aria-label="Example session">
-      <div class="top"><span>leantokens · test run</span><span>/v1/messages</span></div>
-      <div class="body">
-        <div class="row"><span class="k">tool</span><span>orders_query → 40 rows JSON</span></div>
-        <div class="row"><span class="k">json</span><span>40 objects → 1 header + 40 rows</span></div>
-        <div class="row"><span class="k">tool</span><span>tail app.log → 31 lines</span></div>
-        <div class="row"><span class="k">logs</span><span>30 repeats → 1 line <span class="dim">[x30]</span>, colors stripped</span></div>
-        <div class="row"><span class="k">user</span><span class="dim">your messages: untouched</span></div>
-        <div class="row"><span class="k">stream</span><span class="dim">response passed through as it arrives</span></div>
-        <div class="bar"><i></i></div>
-        <div class="row"><span class="big">72%</span><span style="align-self:end">fewer tool-output tokens<br><span class="dim">~1,164 → ~329 on this request</span></span></div>
+    <figure class="shot" aria-label="A real build log before and after leantokens" style="margin:0">
+      <div class="top"><i></i><i></i><i></i><span>Claude Code · Bash(make) · hook filter on</span></div>
+      <div class="log">
+        <div><span class="p">$</span> make</div>
+        <div class="x">compiling module...</div>
+        <div class="x">compiling module...</div>
+        <div class="x">compiling module...</div>
+        <div class="d">  … 296 more identical lines</div>
+        <div class="k">compiling module...  [x300]</div>
+        <div class="k">BUILD OK: 300 modules</div>
       </div>
-    </div>
+      <div class="meter">
+        <div class="row raw"><span>raw</span><div class="track"><b></b></div><span class="n">8,722 chars</span></div>
+        <div class="row lean"><span>model sees</span><div class="track"><b></b></div><span class="n">50 chars</span></div>
+        <div class="sum"><strong>99.4% less</strong><span>measured on a real Claude Code run.<br>Errors are always kept.</span></div>
+      </div>
+    </figure>
   </div>
 </header>
 
 <main>
   <div class="in">
-    <section>
+
+    <section id="routes">
+      <div class="head">
+        <span class="eyebrow">Three ways in</span>
+        <h2>Pick the route that fits how you run Claude.</h2>
+        <p class="lede">Hooks work everywhere Claude Code runs. The proxy routes also compress JSON and repeated reads, but only for agents that honor a base URL.</p>
+      </div>
+      <div class="routes">
+        <div class="route">
+          <span class="tag">Hooks</span>
+          <h3>Filter noisy commands</h3>
+          <p>A Claude Code hook pipes test, install and build output through the filter. Runs inside every session, including the desktop app.</p>
+          <div class="term has-copy">leantokens hooks install global<button class="copy" data-copy="leantokens hooks install global">Copy</button></div>
+        </div>
+        <div class="route">
+          <span class="tag">Always-on proxy</span>
+          <h3>Compress every request</h3>
+          <p>A background proxy that starts at login. Terminal Claude Code uses it in every project. Undo restores your settings.</p>
+          <div class="term has-copy">leantokens desktop on global<button class="copy" data-copy="leantokens desktop on global">Copy</button></div>
+        </div>
+        <div class="route">
+          <span class="tag">Wrap</span>
+          <h3>One session at a time</h3>
+          <p>Starts a private proxy, launches the agent pointed at it, and prints what you saved when you quit.</p>
+          <div class="term has-copy">leantokens wrap claude<button class="copy" data-copy="leantokens wrap claude">Copy</button></div>
+        </div>
+      </div>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead><tr><th scope="col">Where Claude runs</th><th scope="col">Hooks</th><th scope="col">Always-on proxy</th><th scope="col">Wrap</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Claude Code in a terminal</th><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td></tr>
+            <tr><th scope="row">Claude Code in the desktop app</th><td><span class="yes">✓ works</span></td><td><span class="no">– ignores base URL</span></td><td><span class="no">– not launchable</span></td></tr>
+            <tr><th scope="row">Codex CLI, Aider</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="yes">✓ works</span></td></tr>
+            <tr><th scope="row">Your own SDK code</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="no">–</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="chain">
+      <div class="head">
+        <span class="eyebrow">New · gateway chaining</span>
+        <h2>Already using a gateway? leantokens goes in front of it.</h2>
+        <p class="lede">If your Claude Code settings already point <code>ANTHROPIC_BASE_URL</code> at a router, cost tracker or company proxy, <code>desktop on</code> no longer refuses. It takes that URL as its upstream, so nothing you rely on is skipped.</p>
+      </div>
+      <div class="chain">
+        <div class="hops" aria-label="Request path">
+          <div class="hop"><b>Claude Code</b><span>your session</span></div>
+          <div class="hop lt"><b>leantokens</b><code>127.0.0.1:8787</code><span>shrinks tool output</span></div>
+          <div class="hop"><b>Your gateway</b><code>e.g. 127.0.0.1:17322</code><span>routing, logging, keys</span></div>
+          <div class="hop"><b>Anthropic</b><code>api.anthropic.com</code><span>the model</span></div>
+        </div>
+        <div class="chain-cols">
+          <div>
+            <h3>Turn it on</h3>
+            <div class="term"><span class="c"># detects the existing URL and forwards to it</span>
+leantokens desktop on global
+<span class="c"># Chain: Claude Code -&gt; leantokens -&gt; http://127.0.0.1:17322</span>
+leantokens desktop status</div>
+          </div>
+          <div>
+            <h3>Turn it off</h3>
+            <div class="term"><span class="c"># stops the proxy and puts your gateway URL back</span>
+leantokens desktop off</div>
+            <p>An <code>ANTHROPIC_BASE_URL</code> exported in your shell beats Claude Code settings, so it skips the chain. <code>leantokens doctor</code> tells you when that happens.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
       <div class="head">
         <span class="eyebrow">How it saves</span>
         <h2>Same answers, smaller context.</h2>
       </div>
       <div class="facts">
-        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once, the values as rows, and any value shared by every row just once. It rebuilds to the exact original.</p></div>
+        <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Progress bars, color codes and runs of blank lines go. Error lines are always kept.</p><p class="ex"><s>PASS test_a … PASS test_z</s> → <ins>PASS  [x26]</ins></p></div>
+        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once and the values as rows. It rebuilds to the exact original.</p><p class="ex"><s>{"id":1,"status":"paid"},{"id":2,…</s> → <ins>id|status</ins></p></div>
         <div><h3>Repeats become pointers</h3><p>Agents re-read the same file and rerun the same tests. A tool result identical to an earlier one becomes a one-line pointer to it.</p></div>
-        <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Terminal color codes, trailing spaces and runs of blank lines go.</p></div>
-        <div><h3>Prompt caching keeps working</h3><p>The same tool output always compresses to the same bytes and earlier turns never change, so Anthropic and OpenAI cache hits still land.</p></div>
+        <div><h3>Prompt caching keeps working</h3><p>The same output always compresses to the same bytes and earlier turns never change, so cache hits still land.</p></div>
       </div>
     </section>
 
@@ -239,67 +386,30 @@ details pre { margin: 0; padding: 0 16px 16px; max-height: 420px; overflow: auto
       </div>
     </section>
 
-    <section id="use">
-      <div class="head">
-        <span class="eyebrow">Use it your way</span>
-        <h2>Wrap an agent, run a proxy, or pipe a prompt.</h2>
-      </div>
-      <div class="ways">
-        <div class="way">
-          <h3>Wrap a coding agent</h3>
-          <p>Starts a private proxy, launches the agent pointed at it, and prints what you saved when you quit.</p>
-          <div class="term"><span class="c"># Claude Code</span>
-leantokens wrap claude
-<span class="c"># bigger savings: references re-opened files</span>
-leantokens wrap --smart claude
-<span class="c"># Codex CLI, API key login</span>
-leantokens wrap codex
-<span class="c"># totals so far</span>
-leantokens stats</div>
-        </div>
-        <div class="way">
-          <h3>Proxy for any app</h3>
-          <p>Point your own code or SDK at the proxy. Keys pass straight through to the provider and are never stored.</p>
-          <div class="term">leantokens proxy
-
-<span class="c"># then, in your app's shell</span>
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-export OPENAI_BASE_URL=http://127.0.0.1:8787/v1</div>
-        </div>
-        <div class="way">
-          <h3>Compress a prompt</h3>
-          <p>For chat apps. Cuts filler, greetings and repeats from what you paste into Claude or ChatGPT.</p>
-          <div class="term"><span class="c"># clipboard in, clipboard out (macOS)</span>
-pbpaste | leantokens - -l high | pbcopy
-<span class="c"># tool output from a file</span>
-leantokens api.json --tool</div>
-        </div>
-      </div>
-    </section>
-
     <section id="install">
       <div class="head">
         <span class="eyebrow">Install</span>
         <h2>One command. No dependencies.</h2>
-        <p class="lede">Python 3.9 or newer on macOS, Linux or Windows.</p>
+        <p class="lede">Python 3.9 or newer on macOS, Linux or Windows. The always-on proxy needs macOS.</p>
       </div>
       <ol class="steps">
         <li><div>
           <p>Install from PyPI.</p>
           <div class="term has-copy">pip install leantokens<button class="copy" data-copy="pip install leantokens">Copy</button></div>
-          <p class="note">No pip? Copy the script instead, save it as <code>leantokens.py</code>, and run <code>python3 leantokens.py</code> wherever this page says <code>leantokens</code>.</p>
+          <p class="note">No pip? Copy the script, save it as <code>leantokens.py</code>, and run <code>python3 leantokens.py</code> wherever this page says <code>leantokens</code>.</p>
           <div><button class="btn primary" id="copy-script">Copy leantokens.py</button></div>
-          <div class="term has-copy"><span class="c"># macOS: save what you just copied</span>
-pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.py">Copy</button></div>
-          <p class="note">Linux: <code>xclip -o -sel clip &gt; leantokens.py</code>. Windows: paste into Notepad and save as <code>leantokens.py</code>.</p>
         </div></li>
         <li><div>
-          <p>Run your agent through it.</p>
-          <div class="term has-copy">leantokens wrap claude<button class="copy" data-copy="leantokens wrap claude">Copy</button></div>
+          <p>Check your setup. It says exactly what to fix.</p>
+          <div class="term has-copy">leantokens doctor<button class="copy" data-copy="leantokens doctor">Copy</button></div>
         </div></li>
         <li><div>
-          <p>Optional: exact token counts.</p>
-          <div class="term has-copy">pip install "leantokens[exact]"<button class="copy" data-copy='pip install "leantokens[exact]"'>Copy</button></div>
+          <p>Turn on the route you want, then start a new Claude Code session.</p>
+          <div class="term has-copy">leantokens hooks install global<button class="copy" data-copy="leantokens hooks install global">Copy</button></div>
+        </div></li>
+        <li><div>
+          <p>See what you saved.</p>
+          <div class="term has-copy">leantokens stats<button class="copy" data-copy="leantokens stats">Copy</button></div>
         </div></li>
       </ol>
       <details>
@@ -315,14 +425,16 @@ pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.p
       </div>
       <ul class="limits">
         <li><b>It only touches tool output.</b> Your messages and the system prompt reach the model unchanged.</li>
-        <li><b>Savings depend on the work.</b> JSON-heavy and log-heavy sessions save the most. Sessions that mostly read source code save little, because code is left as written.</li>
+        <li><b>Savings depend on the work.</b> Log-heavy and JSON-heavy sessions save the most. Reading source code saves little, because code is left as written.</li>
+        <li><b>The desktop app skips the proxy.</b> Its Code sessions ignore <code>ANTHROPIC_BASE_URL</code>. Use hooks there.</li>
+        <li><b>A shell variable wins.</b> <code>ANTHROPIC_BASE_URL</code> exported in your shell overrides Claude Code settings, including the always-on proxy.</li>
         <li><b>Codex with a ChatGPT login</b> talks to ChatGPT's servers, not the API, so it bypasses the proxy. Use an API key login.</li>
-        <li><b>Chat apps in the browser</b> (claude.ai, chatgpt.com) can't be proxied. Use the prompt compressor and paste.</li>
+        <li><b>Chat in the browser</b> (claude.ai, chatgpt.com) can't be proxied. Compress a prompt here and paste it.</li>
       </ul>
     </section>
   </div>
 </main>
-
+<footer><div class="in"><span>leantokens · MIT licensed · one file, no dependencies</span><span>Undo anything: <code>leantokens hooks uninstall global</code> · <code>leantokens desktop off</code></span></div></footer>
 <script>
 const LEVELS = ["light", "medium", "high", "max"];
 const CODE = /(```[^\n]*\n[\s\S]*?```|`[^`\n]+`)/g;
