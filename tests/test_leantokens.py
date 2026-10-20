@@ -790,7 +790,6 @@ sys.exit(0 if r.status == 200 else 3)
 '''
 
 
-@unittest.skipIf(os.name == "nt", "uses a POSIX stand-in for the claude command")
 @unittest.skipUnless(shutil.which("openssl"), "HTTPS mode makes its certificate with openssl")
 class HttpsProxyTests(unittest.TestCase):
     """HTTPS_PROXY mode: decrypt CONNECTs to INTERCEPT hosts, tunnel everything else blind."""
@@ -823,8 +822,9 @@ class HttpsProxyTests(unittest.TestCase):
 
     def test_ca_key_is_private_and_constrained(self):
         p = lt._ca_paths()
-        self.assertEqual(os.stat(p["key"]).st_mode & 0o077, 0)
-        self.assertEqual(os.stat(lt.CA_DIR).st_mode & 0o077, 0)
+        if os.name != "nt":  # Windows doesn't report Unix permission bits
+            self.assertEqual(os.stat(p["key"]).st_mode & 0o077, 0)
+            self.assertEqual(os.stat(lt.CA_DIR).st_mode & 0o077, 0)
         out = subprocess.run(["openssl", "x509", "-in", p["cert"], "-noout", "-ext", "nameConstraints"],
                              capture_output=True, text=True).stdout
         self.assertIn("DNS:localhost", out)
@@ -936,6 +936,7 @@ class HttpsProxyTests(unittest.TestCase):
                 lt.DESKTOP_PLIST, lt.DESKTOP_STATE, lt._launchctl, lt._healthy, sys.platform = saved
 
 
+@unittest.skipIf(os.name == "nt", "uses a POSIX stand-in for the claude command")
 class WrapTests(unittest.TestCase):
     def test_wrap_end_to_end(self):
         up = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeAPI)
