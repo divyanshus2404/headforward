@@ -2,32 +2,32 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>headforward · cut the tokens your AI agent spends</title>
+<title>headforward · your agent reads what matters</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="/style.css">
-<link rel="canonical" href="https://leantokens.vercel.app/">
+<link rel="canonical" href="https://headforward.vercel.app/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="headforward">
-<meta property="og:title" content="headforward · cut the tokens your AI agent spends">
+<meta property="og:title" content="headforward · your agent reads what matters">
 <meta property="og:description" content="Shrink the tool output Claude Code, Codex and LLM apps send to the model, without hiding failures. Claude Code hooks, an always-on proxy, JSON tables and log cleanup. Open source, one Python file.">
-<meta property="og:url" content="https://leantokens.vercel.app/">
+<meta property="og:url" content="https://headforward.vercel.app/">
 <meta name="twitter:card" content="summary">
-<meta name="theme-color" content="#10162a">
+<meta name="theme-color" content="#0b1d1c">
 
 <meta name="description" content="headforward cuts the tokens Claude Code, Codex and LLM apps spend by compressing tool output before it reaches the model. Open source, one Python file.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2064%2064%22%3E%3Crect%20width=%2264%22%20height=%2264%22%20rx=%2214%22%20fill=%22%23111726%22/%3E%3Crect%20x=%2216%22%20y=%2212%22%20width=%227%22%20height=%2240%22%20rx=%223.5%22%20fill=%22%23eef1f9%22/%3E%3Crect%20x=%2234%22%20y=%2216%22%20width=%227%22%20height=%2236%22%20rx=%223.5%22%20fill=%22%23eef1f9%22/%3E%3Crect%20x=%2227%22%20y=%2226%22%20width=%2225%22%20height=%226%22%20rx=%223%22%20fill=%22%23ff5a4e%22/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2064%2064%22%3E%20%20%3Crect%20width=%2264%22%20height=%2264%22%20rx=%2214%22%20fill=%22%230b1d1c%22/%3E%20%20%3Crect%20x=%2213%22%20y=%2229%22%20width=%2229%22%20height=%226%22%20rx=%223%22%20fill=%22%23ff5a4e%22/%3E%20%20%3Cpath%20d=%22M31%2017%20L46%2032%20L31%2047%22%20fill=%22none%22%20stroke=%22%23ecf6f3%22%20stroke-width=%227%22%20stroke-linecap=%22round%22%20stroke-linejoin=%22round%22/%3E%3C/svg%3E">
 
 <script>(function(){try{var m=localStorage.getItem("lt-theme");if(m==="light"||m==="dark")document.documentElement.dataset.theme=m}catch(e){}})();</script>
 </head>
 <body>
-<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#111726"/><rect class="stem" x="16" y="12" width="7" height="40" rx="3.5" fill="#eef1f9"/><rect class="stem" x="34" y="16" width="7" height="36" rx="3.5" fill="#eef1f9"/><rect class="cut" x="27" y="26" width="25" height="6" rx="3" fill="#ff5a4e"/></svg>headforward</a><div class="links"><a href="/docs/">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/headforward">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
+<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#0b1d1c"/><rect class="cut" x="13" y="29" width="29" height="6" rx="3" fill="#ff5a4e"/><path class="head" d="M31 17 L46 32 L31 47" fill="none" stroke="#ecf6f3" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>headforward</a><div class="links"><a href="/docs/">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/headforward">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
 <header class="hero">
   <div class="in">
     <div class="copy">
-      <span class="eyebrow">headforward · open source · one Python file</span>
+      <span class="eyebrow">open source · one Python file · runs on your machine</span>
       <h1>Your agent reads <s>everything</s> what matters.</h1>
       <p>Coding agents spend most of their tokens re-reading tool output: test runs, build logs, git output, JSON. headforward shrinks that output before the model sees it. Errors are always kept, and you keep using Claude Code exactly as before.</p>
       <div class="cmd"><code>headforward <b>hooks install global</b></code><button id="copy-hero" data-copy="headforward hooks install global">Copy</button></div>
@@ -179,7 +179,7 @@ ERROR POST /api/checkout 500: payment timeout</pre></div>
       <div class="head">
         <span class="eyebrow">Three ways in</span>
         <h2>Pick the route that fits how you run Claude.</h2>
-        <p class="lede">Hooks work everywhere Claude Code runs. The proxy routes also compress JSON and repeated reads, for agents that honor a base URL.</p>
+        <p class="lede">Hooks work everywhere Claude Code runs. The proxy routes also compress JSON and repeated reads, in the terminal and, with <code>--https</code>, the desktop app.</p>
       </div>
       <div class="ways">
         <div class="way">
@@ -191,7 +191,7 @@ ERROR POST /api/checkout 500: payment timeout</pre></div>
         <div class="way">
           <span class="tag">Always-on proxy</span>
           <h3>Compress every request</h3>
-          <p>Starts at login (macOS) and serves terminal Claude Code in every project. Off restores your settings.</p>
+          <p>Starts at login (macOS) and serves Claude Code in every project. Add <code>--https</code> to reach the desktop app too. Off restores your settings.</p>
           <div class="term has-copy">headforward desktop on global<button class="copy" data-copy="headforward desktop on global">Copy</button></div>
         </div>
         <div class="way">
@@ -206,7 +206,7 @@ ERROR POST /api/checkout 500: payment timeout</pre></div>
           <thead><tr><th scope="col">Where it runs</th><th scope="col">Hooks</th><th scope="col">Always-on proxy</th><th scope="col">Wrap</th></tr></thead>
           <tbody>
             <tr><th scope="row">Claude Code in a terminal</th><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td></tr>
-            <tr><th scope="row">Claude Code in the desktop app</th><td><span class="yes">✓ works</span></td><td><span class="no">– ignores base URL</span></td><td><span class="no">– not launchable</span></td></tr>
+            <tr><th scope="row">Claude Code in the desktop app</th><td><span class="yes">✓ works</span></td><td><span class="yes">✓ with --https</span></td><td><span class="no">– not launchable</span></td></tr>
             <tr><th scope="row">Codex CLI, Aider</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="yes">✓ works</span></td></tr>
             <tr><th scope="row">Your own SDK code</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="no">–</span></td></tr>
           </tbody>
@@ -304,7 +304,7 @@ pbpaste &gt; headforward.py<button class="copy" data-copy="pbpaste > headforward
       </div>
       <div class="faq">
         <details><summary>Does it change the model's answers?</summary><p>The default rules are lossless: every compressed result can be rebuilt exactly, or points to an identical copy already in the conversation. Whether a model behaves the same on your work is something you can check: <code>headforward eval</code> replays your recorded requests with and without compression and compares the answers.</p></details>
-        <details><summary>Is my API key or Claude sign-in safe?</summary><p>The proxy runs only on your computer, listens on 127.0.0.1, and passes credentials straight to Anthropic or OpenAI. They are never stored or logged.</p></details>
+        <details><summary>Is my API key or Claude sign-in safe?</summary><p>The proxy runs only on your computer, listens on 127.0.0.1, and passes credentials straight to Anthropic or OpenAI. They are never stored or logged. In <code>--https</code> mode it decrypts only <code>api.anthropic.com</code>, with a local certificate that can vouch for nothing else; every other site gets a plain tunnel it never reads.</p></details>
         <details><summary>Does it break prompt caching?</summary><p>No. Compression is deterministic and never rewrites earlier turns, so each request still begins with the same bytes as the last one and cache hits keep landing.</p></details>
         <details><summary>Does it work with claude.ai or chatgpt.com?</summary><p>Those sites talk directly to their own servers, so no proxy can sit in between. You can compress text before pasting it: <code>pbpaste | headforward - -l high | pbcopy</code> on macOS.</p></details>
         <details><summary>How do I know it's working?</summary><p>In a new Claude Code session, run something noisy like your tests. Shortened output carries a line such as <code>[40 passing test lines omitted; full output: headforward show ID]</code>. <code>headforward stats</code> counts every request it touched.</p></details>
@@ -322,7 +322,7 @@ pbpaste &gt; headforward.py<button class="copy" data-copy="pbpaste > headforward
         <li><b>It only touches tool output.</b> Your messages and the system prompt reach the model unchanged.</li>
         <li><b>Savings depend on the work.</b> JSON-heavy and log-heavy sessions save the most. Sessions that mostly read source code save little, because code is left as written.</li>
         <li><b>History often costs more.</b> Every reply resends the conversation. <code>/clear</code> between tasks and <code>/compact</code> in long sessions save more than any filter.</li>
-        <li><b>The desktop app skips the proxy.</b> Its Code sessions ignore <code>ANTHROPIC_BASE_URL</code>. Use hooks there.</li>
+        <li><b>The desktop app needs <code>--https</code>.</b> Its Code sessions ignore <code>ANTHROPIC_BASE_URL</code>, so <code>desktop on --https</code> serves them as their HTTPS proxy instead. If that proxy is down, those sessions can't connect until you run <code>headforward desktop off</code>.</li>
         <li><b>A shell variable wins.</b> <code>ANTHROPIC_BASE_URL</code> exported in your shell overrides Claude Code settings, including the always-on proxy.</li>
         <li><b>Codex with a ChatGPT login</b> talks to ChatGPT's servers, not the API, so it bypasses the proxy. Use an API key login.</li>
         <li><b>Chat apps in the browser</b> (claude.ai, chatgpt.com) can't be proxied. Use the prompt compressor and paste.</li>
