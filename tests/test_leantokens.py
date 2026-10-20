@@ -314,7 +314,8 @@ class AuditTuneTests(unittest.TestCase):
             self.assertIn("Read(./.env)", deny)
             self.assertIn("Read(./package-lock.json)", deny)
             self.assertIn("Read(./dist/**)", deny)
-            self.assertEqual(data["env"]["BASH_MAX_OUTPUT_LENGTH"], "30000")
+            self.assertEqual(data["bashOutputMaxChars"], 15000)
+            self.assertNotIn("env", data)
             self.assertTrue(os.path.exists(os.path.join(d, ".claude", "settings.local.json.bak")))
             buf = io.StringIO()
             with redirect_stdout(buf):
@@ -424,6 +425,70 @@ class DesktopTests(unittest.TestCase):
         self.assertIn("<string>--quiet</string>", x)
         self.assertIn("<string>--smart</string>", x)
         self.assertIn("<key>KeepAlive</key><true/>", x)
+
+
+class HookTests(unittest.TestCase):
+    def test_rewrites_only_noisy_commands(self):
+        for c in ["npm test", "npm install", "pytest -q", "python3 -m unittest discover -v", "cargo build",
+                  "CI=1 npm run test:unit", "go test ./...", "pip install -r requirements.txt", "make"]:
+            self.assertIsNotNone(lt.rewrite_command(c), c)
+        for c in ["ls -la", "cat package.json", "git diff", "npm test &", "cd app && npm test",
+                  "npm test | tail -5", "python3 script.py", "pytest <<EOF\nx\nEOF", "echo npm test"]:
+            self.assertIsNone(lt.rewrite_command(c), c)
+
+    def test_hook_output_shape(self):
+        import subprocess as sp
+        ev = json.dumps({"tool_name": "Bash", "tool_input": {"command": "npm test", "description": "d", "timeout": 5}})
+        out = sp.run([sys.executable, lt.__file__, "hook-bash"], input=ev, capture_output=True, text=True).stdout
+        h = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(h["hookEventName"], "PreToolUse")
+        self.assertEqual(h["updatedInput"]["description"], "d")
+        self.assertEqual(h["updatedInput"]["timeout"], 5)
+        self.assertIn("filter )", h["updatedInput"]["command"])
+        self.assertNotIn("permissionDecision", h)
+        quiet = sp.run([sys.executable, lt.__file__, "hook-bash"], input='{"tool_input":{"command":"ls"}}',
+                       capture_output=True, text=True)
+        self.assertEqual((quiet.stdout, quiet.returncode), ("", 0))
+        with tempfile.TemporaryDirectory() as home:  # keep the expected error out of the real ~/.leantokens log
+            broken = sp.run([sys.executable, lt.__file__, "hook-bash"], input="not json", capture_output=True,
+                            text=True, env=dict(os.environ, HOME=home))
+        self.assertEqual((broken.stdout, broken.returncode), ("", 0))
+
+    @unittest.skipIf(os.name == "nt", "POSIX shell")
+    def test_wrapped_command_keeps_exit_code_and_errors(self):
+        import subprocess as sp
+        with tempfile.TemporaryDirectory() as d:
+            lt.BLOB_DIR = d
+            script = os.path.join(d, "fake_tests.py")
+            with open(script, "w") as f:
+                f.write("import sys\nfor i in range(40): print('test_%d ... ok' % i)\n"
+                        "print('FAIL: test_login', file=sys.stderr)\nsys.exit(3)\n")
+            cmd = lt.rewrite_command("make") .replace("make", "%s %s" % (sys.executable, script), 1)
+            r = sp.run(["bash", "-c", cmd], capture_output=True, text=True, env=dict(os.environ, HOME=d))
+            self.assertEqual(r.returncode, 3)
+            self.assertIn("FAIL: test_login", r.stdout)
+            self.assertIn("passing test lines omitted", r.stdout)
+            self.assertLess(len(r.stdout), 300)
+
+    def test_filter_keeps_short_repeats_and_redraws(self):
+        self.assertEqual(lt.filter_output("a\na\nb"), "a\na\nb")
+        self.assertEqual(lt.filter_output("x\nx\nx\nx"), "x  [x4]")
+        self.assertEqual(lt.filter_output("10%\r50%\r100% done"), "100% done")
+
+    def test_install_uninstall_round_trip(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".claude", "settings.local.json")
+            os.makedirs(os.path.dirname(path))
+            other = {"matcher": "Write", "hooks": [{"type": "command", "command": "prettier --write"}]}
+            with open(path, "w") as f:
+                json.dump({"model": "opus", "hooks": {"PreToolUse": [other]}}, f)
+            self.assertTrue(lt.hooks_install(d)[1])
+            self.assertFalse(lt.hooks_install(d)[1])  # idempotent
+            data = json.load(open(path))
+            self.assertEqual(len(data["hooks"]["PreToolUse"]), 2)
+            self.assertTrue(lt.hooks_uninstall(d)[1])
+            self.assertEqual(json.load(open(path)), {"model": "opus", "hooks": {"PreToolUse": [other]}})
+            self.assertFalse(lt.hooks_uninstall(d)[1])
 
 
 class CacheTests(unittest.TestCase):

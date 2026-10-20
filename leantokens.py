@@ -28,6 +28,7 @@ import http.server
 import json
 import os
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -1493,7 +1494,7 @@ def cmd_count(argv):
 
 MEMORY_WARN = 2000        # CLAUDE.md is sent with every request; flag it above this
 BIG_FILE_TOKENS = 25000   # a single file this big costs a lot every time an agent reads it
-BASH_OUTPUT_CAP = "30000"  # characters of command output Claude Code keeps per command
+OUTPUT_CAP = 15000  # bashOutputMaxChars: inline characters per command (Claude Code default 30000; rest saved to a file)
 BUILD_DIRS = ["dist", "build", "out", ".next", ".nuxt", "coverage", "target", "vendor", ".turbo", "storybook-static"]
 LOCKFILES = sorted(SKIP_FILES - {".DS_Store"})
 GENERATED = ["*.min.js", "*.min.css", "*.map"]
@@ -1523,6 +1524,8 @@ def _settings(root):
             continue
         merged.setdefault("deny", []).extend(data.get("permissions", {}).get("deny", []))
         merged.setdefault("env", {}).update(data.get("env", {}))
+        if "bashOutputMaxChars" in data:
+            merged["bashOutputMaxChars"] = data["bashOutputMaxChars"]
     return merged
 
 
@@ -1577,11 +1580,11 @@ def find_waste(root):
                          "Generated files waste tokens when an agent opens or searches them.",
                          "leantokens tune claude --apply"))
 
-    env = settings.get("env", {})
-    if "BASH_MAX_OUTPUT_LENGTH" not in env and "BASH_MAX_OUTPUT_LENGTH" not in os.environ:
+    if "bashOutputMaxChars" not in settings:
         findings.append(("medium", "Command output size is not capped",
                          "A noisy test run or build can put tens of thousands of tokens into the conversation.",
-                         "leantokens tune claude --apply (sets BASH_MAX_OUTPUT_LENGTH=%s)" % BASH_OUTPUT_CAP))
+                         "leantokens tune claude --apply (sets bashOutputMaxChars=%d; longer output is saved to a "
+                         "file Claude can still open)" % OUTPUT_CAP))
 
     for f, t in _big_files(root, BIG_FILE_TOKENS)[:8]:
         rel = os.path.relpath(f, root)
@@ -1635,13 +1638,20 @@ def tune_plan(root):
         rules.append("Read(./**/%s)" % g)
     rules = [r for r in rules if r not in existing]
     env_add = {}
-    if "BASH_MAX_OUTPUT_LENGTH" not in data.get("env", {}) and "BASH_MAX_OUTPUT_LENGTH" not in _settings(root).get("env", {}):
-        env_add["BASH_MAX_OUTPUT_LENGTH"] = BASH_OUTPUT_CAP
+    if "bashOutputMaxChars" not in data and "bashOutputMaxChars" not in _settings(root):
+        env_add["bashOutputMaxChars"] = OUTPUT_CAP
+    # Earlier versions set BASH_MAX_OUTPUT_LENGTH=30000, which only sizes a read-back window: remove it.
+    stale = data.get("env", {}).get("BASH_MAX_OUTPUT_LENGTH") == "30000"
     new = json.loads(json.dumps(data))
     if rules:
         new.setdefault("permissions", {}).setdefault("deny", []).extend(rules)
     if env_add:
-        new.setdefault("env", {}).update(env_add)
+        new.update(env_add)
+    if stale:
+        del new["env"]["BASH_MAX_OUTPUT_LENGTH"]
+        if not new["env"]:
+            del new["env"]
+        env_add["(removed old BASH_MAX_OUTPUT_LENGTH)"] = "-"
     return path, new, rules, env_add
 
 
@@ -1664,7 +1674,11 @@ def cmd_tune(argv):
     for r in rules:
         print("  + deny %s" % r)
     for k, v in env_add.items():
-        print("  + env %s=%s  (Claude Code keeps at most this many characters of each command's output)" % (k, v))
+        if k.startswith("(removed"):
+            print("  - env BASH_MAX_OUTPUT_LENGTH  (had no effect; replaced by bashOutputMaxChars)")
+        else:
+            print("  + %s: %s  (characters of each command's output Claude reads inline; the rest is saved to a file)"
+                  % (k, v))
     if not a.apply:
         print("\nNothing written. Run again with --apply to save. Restart Claude Code afterwards.")
         return 0
@@ -2045,6 +2059,170 @@ def cmd_desktop(argv):
     return 0 if (up or not state.get("settings")) else 1
 
 
+# ---------------------------------------------------------------------------
+# hooks: compress noisy command output inside Claude Code itself.
+# A PreToolUse hook rewrites test/install/build commands to pipe their output
+# through `leantokens filter`. Works in the desktop app and the terminal alike,
+# because it runs inside Claude Code rather than on the network path.
+# ---------------------------------------------------------------------------
+
+# Commands whose output is mostly routine noise. Only these are touched.
+NOISY = re.compile(
+    r"^(?:[A-Z_][A-Z0-9_]*=\S*\s+)*(?:"
+    r"(?:npm|pnpm|yarn|bun)\s+(?:install|i|ci|add|test|t|run\s+(?:test|build|lint)\S*|build)\b"
+    r"|npx\s+(?:jest|vitest|tsc|eslint|playwright|mocha)\b"
+    r"|(?:jest|vitest|mocha|tsc|eslint|rspec|phpunit)\b"
+    r"|pytest\b|python3?\s+-m\s+(?:pytest|unittest|pip\s+install)\b"
+    r"|pip3?\s+install\b|uv\s+(?:pip\s+install|sync|add)\b|poetry\s+install\b"
+    r"|go\s+(?:test|build|mod\s+(?:download|tidy))\b"
+    r"|cargo\s+(?:build|test|check|clippy|install)\b"
+    r"|make\b|mvn\b|\./mvnw\b|gradle\b|\./gradlew\b"
+    r"|docker\s+(?:build|pull|compose\s+(?:build|pull|up))\b"
+    r"|bundle\s+install\b|composer\s+install\b|brew\s+(?:install|upgrade)\b"
+    r")")
+UNSAFE = re.compile(r"<<|(^|[^&|])&\s*$|\bcd\s|leantokens|\|\s*(?:tee|less|more|head|tail)\b")
+
+
+def filter_output(text):
+    """Conservative cleanup for command output: colors, routine runs, repeats.
+
+    Error-like lines are always kept; anything removed is saved and readable
+    with `leantokens show ID`.
+    """
+    s = ANSI.sub("", text).replace("\r\n", "\n")
+    s = "\n".join(l.split("\r")[-1] for l in s.split("\n"))  # progress bars redraw with \r
+    s = _filter_noise(s)
+    lines = [l.rstrip() for l in s.split("\n")]
+    out, prev, n = [], None, 0
+    for line in lines + [None]:
+        if line == prev:
+            n += 1
+            continue
+        if prev is not None:
+            out.extend([prev] if n == 1 else ([prev] * n if n < 3 else ["%s  [x%d]" % (prev, n)]))
+        prev, n = line, 1
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out))
+
+
+def cmd_filter(argv):
+    data = sys.stdin.buffer.read().decode("utf-8", "replace")
+    out = filter_output(data)
+    sys.stdout.write(out if out.endswith("\n") or not out else out + "\n")
+    if len(out) < len(data):
+        _append_stats({"t": int(time.time()), "p": "hook", "b": len(data), "a": len(out)})
+    return 0
+
+
+def _self_cmd():
+    """How a hook should call this exact leantokens, independent of PATH."""
+    return "%s %s" % (shlex.quote(sys.executable), shlex.quote(os.path.abspath(__file__)))
+
+
+def rewrite_command(cmd):
+    """The command wrapped to filter its output, or None to leave it alone."""
+    c = cmd.strip()
+    if not c or "\n" in c or not NOISY.match(c) or UNSAFE.search(c):
+        return None
+    # A subshell keeps pipefail from leaking into later commands; the command's
+    # own exit code is preserved, so failures still look like failures.
+    return "( set -o pipefail; { %s\n} 2>&1 | %s filter )" % (c, _self_cmd())
+
+
+def cmd_hook_bash(argv):
+    """PreToolUse hook for Bash. Prints nothing (no change) unless it rewrites."""
+    try:
+        event = json.loads(sys.stdin.read() or "{}")
+        tool_input = event.get("tool_input") or {}
+        new = rewrite_command(tool_input.get("command") or "")
+        if new:
+            updated = dict(tool_input, command=new)
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "updatedInput": updated}}))
+    except Exception as e:  # a hook must never break the agent
+        _log_error("hook-bash: %r" % e)
+    return 0
+
+
+HOOK_MARK = " hook-bash"
+
+
+def _hook_settings_path(target):
+    return _settings_path(target)
+
+
+def hooks_install(target):
+    path = _hook_settings_path(target)
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except OSError:
+        data = {}
+    except ValueError:
+        raise RuntimeError("%s is not valid JSON; fix it first" % path)
+    pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    for group in pre:
+        for h in group.get("hooks", []):
+            if HOOK_MARK in h.get("command", "") and "leantokens" in h.get("command", ""):
+                return path, False
+    pre.append({"matcher": "Bash",
+                "hooks": [{"type": "command", "command": _self_cmd() + HOOK_MARK, "timeout": 10}]})
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        shutil.copy2(path, path + ".bak")
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    return path, True
+
+
+def hooks_uninstall(target):
+    path = _hook_settings_path(target)
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return path, False
+    if not isinstance(data.get("hooks"), dict):
+        return path, False
+    pre = data["hooks"].get("PreToolUse", [])
+    removed = False
+    for group in pre:
+        keep = [h for h in group.get("hooks", [])
+                if not (HOOK_MARK in h.get("command", "") and "leantokens" in h.get("command", ""))]
+        removed |= len(keep) != len(group.get("hooks", []))
+        group["hooks"] = keep
+    data["hooks"]["PreToolUse"] = [g for g in pre if g.get("hooks")] if pre else pre
+    if not data["hooks"].get("PreToolUse"):
+        data["hooks"].pop("PreToolUse", None)
+    if not data["hooks"]:
+        data.pop("hooks")
+    if removed:
+        shutil.copy2(path, path + ".bak")
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+            f.write("\n")
+    return path, removed
+
+
+def cmd_hooks(argv):
+    ap = argparse.ArgumentParser(prog="leantokens hooks",
+                                 description="Compress noisy command output inside Claude Code (desktop app and terminal).")
+    ap.add_argument("action", choices=["install", "uninstall"])
+    ap.add_argument("target", nargs="?", default=".", help="project folder (default: current), or `global`")
+    a = ap.parse_args(argv)
+    try:
+        path, changed = (hooks_install if a.action == "install" else hooks_uninstall)(a.target)
+    except RuntimeError as e:
+        print("leantokens: %s" % e, file=sys.stderr)
+        return 1
+    if a.action == "install":
+        print(("Installed in %s.\nNew Claude Code sessions there will filter test, install and build output.\n"
+               "Undo: leantokens hooks uninstall %s" if changed else "Already installed in %s.") % (
+                  (path, a.target) if changed else (path,)))
+    else:
+        print(("Removed from %s." if changed else "Nothing to remove in %s.") % path)
+    return 0
+
+
 USAGE = """usage:
   leantokens wrap claude [args...]       run Claude Code through the compressor
   leantokens wrap codex [args...]        run OpenAI Codex CLI (API key auth)
@@ -2066,7 +2244,11 @@ Claude Code habits:
   leantokens usage [--days N] [--by day|model|project]  Claude Code token use from its local logs
   leantokens map [PATH...] [--copy]      compact outline of a codebase (classes, functions, lines)
 
-Claude Code in the desktop app (macOS):
+Claude Code anywhere, including the desktop app:
+  leantokens hooks install [PROJECT|global]  filter test/install/build output via a Claude Code hook
+  leantokens hooks uninstall [PROJECT|global]
+
+Always-on proxy for terminal Claude Code (macOS):
   leantokens desktop on [PROJECT|global] run the proxy in the background and point Claude Code at it
   leantokens desktop status              is it running, and which settings use it
   leantokens desktop off                 stop it and undo every settings change
@@ -2095,9 +2277,11 @@ def main(argv=None):
         return cmd_eval(argv[1:])
     if argv and argv[0] == "show":
         return cmd_show(argv[1:])
-    if argv and argv[0] in ("doctor", "clip", "pack", "count", "audit", "tune", "usage", "map", "desktop"):
+    if argv and argv[0] in ("doctor", "clip", "pack", "count", "audit", "tune", "usage", "map", "desktop",
+                                 "hooks", "hook-bash", "filter"):
         return {"doctor": cmd_doctor, "clip": cmd_clip, "pack": cmd_pack, "count": cmd_count,
-                "audit": cmd_audit, "tune": cmd_tune, "usage": cmd_usage, "map": cmd_map, "desktop": cmd_desktop}[argv[0]](argv[1:])
+                "audit": cmd_audit, "tune": cmd_tune, "usage": cmd_usage, "map": cmd_map, "desktop": cmd_desktop, "hooks": cmd_hooks,
+                "hook-bash": cmd_hook_bash, "filter": cmd_filter}[argv[0]](argv[1:])
     if argv and argv[0] == "proxy":
         ap = argparse.ArgumentParser(prog="leantokens proxy")
         ap.add_argument("--port", type=int, default=8787)

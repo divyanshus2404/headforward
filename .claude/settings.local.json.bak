@@ -7,8 +7,5 @@
       "Read(./**/*.map)"
     ]
   },
-  "env": {
-    "BASH_MAX_OUTPUT_LENGTH": "30000",
-    "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787"
-  }
+  "bashOutputMaxChars": 15000
 }

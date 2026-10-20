@@ -98,7 +98,7 @@ leantokens tune claude           # preview token-saving Claude Code settings
 leantokens tune claude --apply   # save them to .claude/settings.local.json (backup kept)
 ```
 
-`audit` reports how many tokens your `CLAUDE.md` files cost on every request, lockfiles and build output Claude can open, whether command output is capped, and single files big enough to be expensive to read. `tune` adds `Read` deny rules for lockfiles, build folders and minified or source-map files, and caps each command's output with `BASH_MAX_OUTPUT_LENGTH`. Existing settings are kept, and nothing is written without `--apply`. Restart Claude Code afterwards.
+`audit` reports how many tokens your `CLAUDE.md` files cost on every request, lockfiles and build output Claude can open, whether command output is capped, and single files big enough to be expensive to read. `tune` adds `Read` deny rules for lockfiles, build folders and minified or source-map files, and sets `bashOutputMaxChars` to 15,000 so longer command output is saved to a file instead of filling the conversation. Existing settings are kept, and nothing is written without `--apply`. Restart Claude Code afterwards.
 
 Habits that save the most, with or without leantokens: `/clear` between unrelated tasks, `/compact` in long ones, name the exact file and function, ask for short answers, and use a smaller model with `/model` for simple edits.
 
@@ -119,6 +119,17 @@ leantokens pack src/ --outline   # signatures only for code, full text for every
 ```
 
 `map` describes the 85 KB leantokens source in about 1,400 tokens. Paste it, or put it in `CLAUDE.md`, so Claude can go straight to the right function. `pack --outline` halved the token cost of packing this repository (72,758 to 35,026), and `pack` now lists the most expensive files.
+
+### Claude Code in the desktop app (hooks)
+
+The desktop app can't be routed through the proxy, but Claude Code hooks run inside every session:
+
+```bash
+leantokens hooks install ~/code/my-app   # or: leantokens hooks install global
+leantokens hooks uninstall ~/code/my-app
+```
+
+A `PreToolUse` hook rewrites test, install and build commands (`npm test`, `pytest`, `pip install`, `cargo build`, `make` and similar) so their output is filtered: colour codes and progress redraws are removed, runs of routine lines collapse to a count, and error lines are always kept. The command's exit code is preserved, anything removed is saved for `leantokens show ID`, and every other command is left alone. Tested in a real desktop Code session: the test run worked, the exit code came through, and the output shrank by 12%. Savings are larger on install and build output.
 
 ### Always-on proxy for terminal Claude Code (macOS)
 
