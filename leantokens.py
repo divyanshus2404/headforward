@@ -2176,7 +2176,11 @@ def desktop_on(target, mode_args):
         f.write(_plist(mode_args + (["--upstream", chained] if chained else [])))
     domain = "gui/%d" % os.getuid()
     _launchctl("bootout", domain + "/" + DESKTOP_LABEL)
-    r = _launchctl("bootstrap", domain, DESKTOP_PLIST)
+    for _ in range(10):  # bootout finishes asynchronously; bootstrap fails (error 5) until it has
+        r = _launchctl("bootstrap", domain, DESKTOP_PLIST)
+        if r.returncode == 0:
+            break
+        time.sleep(0.5)
     for _ in range(50):
         if _healthy(0.5):
             break
