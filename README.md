@@ -90,6 +90,18 @@ leantokens count notes.md             # Claude tokens before and after (exact wi
 
 `clip` uses the JSON and log rules on data and the prompt rules on prose: copying a 30-row API response went from 1,112 to 90 tokens, and a chatty question from 31 to 11. `pack` follows `.gitignore`, skips lockfiles, binaries, `node_modules` and anything that looks like a secret (`.env`, keys, credentials), trims trailing spaces in code and compresses JSON and logs. It uses the `<document path="...">` format Anthropic recommends for long inputs.
 
+### Fix the habits that waste tokens in Claude Code
+
+```bash
+leantokens audit                 # what wastes tokens in this project
+leantokens tune claude           # preview token-saving Claude Code settings
+leantokens tune claude --apply   # save them to .claude/settings.local.json (backup kept)
+```
+
+`audit` reports how many tokens your `CLAUDE.md` files cost on every request, lockfiles and build output Claude can open, whether command output is capped, and single files big enough to be expensive to read. `tune` adds `Read` deny rules for lockfiles, build folders and minified or source-map files, and caps each command's output with `BASH_MAX_OUTPUT_LENGTH`. Existing settings are kept, and nothing is written without `--apply`. Restart Claude Code afterwards.
+
+Habits that save the most, with or without leantokens: `/clear` between unrelated tasks, `/compact` in long ones, name the exact file and function, ask for short answers, and use a smaller model with `/model` for simple edits.
+
 ### Check your setup
 
 ```bash

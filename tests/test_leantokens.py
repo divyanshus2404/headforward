@@ -273,6 +273,69 @@ class ClaudeChatTests(unittest.TestCase):
         self.assertIn("fewer", buf.getvalue())
 
 
+class AuditTuneTests(unittest.TestCase):
+    def make_project(self, d):
+        with open(os.path.join(d, "package-lock.json"), "w") as f:
+            f.write("{}")
+        os.makedirs(os.path.join(d, "dist"))
+        with open(os.path.join(d, "CLAUDE.md"), "w") as f:
+            f.write("Always follow these detailed rules carefully. " * 600)
+        os.makedirs(os.path.join(d, ".claude"))
+        with open(os.path.join(d, ".claude", "settings.local.json"), "w") as f:
+            json.dump({"model": "opus", "permissions": {"allow": ["Bash(npm test)"], "deny": ["Read(./.env)"]}}, f)
+
+    def test_audit_finds_waste(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_project(d)
+            titles = " | ".join(t for _, t, _, _ in lt.find_waste(d))
+            self.assertIn("CLAUDE.md is", titles)
+            self.assertIn("Lockfiles Claude can read: package-lock.json", titles)
+            self.assertIn("Build output Claude can read: dist/", titles)
+            sev = dict((t.split(" is ")[0][-9:], s) for s, t, _, _ in lt.find_waste(d) if "CLAUDE.md" in t)
+            self.assertIn("high", sev.values())
+
+    def test_tune_preview_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_project(d)
+            before = open(os.path.join(d, ".claude", "settings.local.json")).read()
+            with redirect_stdout(io.StringIO()):
+                lt.cmd_tune(["claude", d])
+            self.assertEqual(open(os.path.join(d, ".claude", "settings.local.json")).read(), before)
+
+    def test_tune_apply_merges_and_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.make_project(d)
+            with redirect_stdout(io.StringIO()):
+                lt.cmd_tune(["claude", d, "--apply"])
+            data = json.load(open(os.path.join(d, ".claude", "settings.local.json")))
+            self.assertEqual(data["model"], "opus")
+            self.assertEqual(data["permissions"]["allow"], ["Bash(npm test)"])
+            deny = data["permissions"]["deny"]
+            self.assertIn("Read(./.env)", deny)
+            self.assertIn("Read(./package-lock.json)", deny)
+            self.assertIn("Read(./dist/**)", deny)
+            self.assertEqual(data["env"]["BASH_MAX_OUTPUT_LENGTH"], "30000")
+            self.assertTrue(os.path.exists(os.path.join(d, ".claude", "settings.local.json.bak")))
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                lt.cmd_tune(["claude", d, "--apply"])
+            self.assertIn("Nothing to change", buf.getvalue())
+            self.assertEqual(json.load(open(os.path.join(d, ".claude", "settings.local.json")))["permissions"]["deny"], deny)
+            self.assertNotIn("lockfiles Claude can read", " ".join(t.lower() for _, t, _, _ in lt.find_waste(d)))
+
+    def test_tune_refuses_broken_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".claude"))
+            with open(os.path.join(d, ".claude", "settings.local.json"), "w") as f:
+                f.write("{not json")
+            err = io.StringIO()
+            from contextlib import redirect_stderr
+            with redirect_stderr(err):
+                self.assertEqual(lt.cmd_tune(["claude", d, "--apply"]), 1)
+            self.assertIn("not valid JSON", err.getvalue())
+            self.assertEqual(open(os.path.join(d, ".claude", "settings.local.json")).read(), "{not json")
+
+
 class CacheTests(unittest.TestCase):
     def test_adds_markers(self):
         b = {"system": "sys", "messages": [{"role": "user", "content": "hi"}]}

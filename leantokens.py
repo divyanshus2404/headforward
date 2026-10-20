@@ -1469,6 +1469,209 @@ def cmd_count(argv):
     return 0
 
 
+# ---------------------------------------------------------------------------
+# audit / tune: find and fix the habits that waste Claude Code tokens.
+# ---------------------------------------------------------------------------
+
+MEMORY_WARN = 2000        # CLAUDE.md is sent with every request; flag it above this
+BIG_FILE_TOKENS = 25000   # a single file this big costs a lot every time an agent reads it
+BASH_OUTPUT_CAP = "30000"  # characters of command output Claude Code keeps per command
+BUILD_DIRS = ["dist", "build", "out", ".next", ".nuxt", "coverage", "target", "vendor", ".turbo", "storybook-static"]
+LOCKFILES = sorted(SKIP_FILES - {".DS_Store"})
+GENERATED = ["*.min.js", "*.min.css", "*.map"]
+
+
+def _tok(text):
+    return count(text)[0]
+
+
+def _memory_files(root):
+    home = os.path.expanduser("~")
+    found = []
+    for p in [os.path.join(home, ".claude", "CLAUDE.md"), os.path.join(root, "CLAUDE.md"),
+              os.path.join(root, ".claude", "CLAUDE.md"), os.path.join(root, "CLAUDE.local.md")]:
+        if os.path.isfile(p):
+            found.append(p)
+    return found
+
+
+def _settings(root):
+    merged = {}
+    for name in ("settings.json", "settings.local.json"):
+        try:
+            with open(os.path.join(root, ".claude", name)) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            continue
+        merged.setdefault("deny", []).extend(data.get("permissions", {}).get("deny", []))
+        merged.setdefault("env", {}).update(data.get("env", {}))
+    return merged
+
+
+def _big_files(root, limit):
+    files, _ = _collect([root])
+    out = []
+    for f in files:
+        try:
+            size = os.path.getsize(f)
+        except OSError:
+            continue
+        if size < limit * 3:  # cheap pre-filter: under ~3 chars/token can't be this big
+            continue
+        try:
+            raw = open(f, "rb").read()
+        except OSError:
+            continue
+        if b"\0" in raw[:8192]:
+            continue
+        t = _tok(raw.decode("utf-8", "replace"))
+        if t >= limit:
+            out.append((f, t))
+    return sorted(out, key=lambda x: -x[1])
+
+
+def find_waste(root):
+    """Return a list of findings: (severity, title, detail, fix)."""
+    root = os.path.abspath(root)
+    findings = []
+    for p in _memory_files(root):
+        t = _tok(open(p, encoding="utf-8", errors="replace").read())
+        where = p.replace(os.path.expanduser("~"), "~")
+        if t > MEMORY_WARN:
+            findings.append(("high", "%s is %s tokens" % (where, format(t, ",")),
+                             "It is sent with every request, so a 100-request session pays for it 100 times "
+                             "(cheaper when cached, but it still fills the context).",
+                             "Cut it to what most tasks need; move rarely used detail into separate docs Claude reads on demand."))
+        else:
+            findings.append(("ok", "%s is %s tokens" % (where, format(t, ",")), "", ""))
+
+    settings = _settings(root)
+    deny = " ".join(settings.get("deny", []))
+    present_locks = [n for n in LOCKFILES if os.path.exists(os.path.join(root, n))]
+    unguarded = [n for n in present_locks if n not in deny]
+    if unguarded:
+        findings.append(("medium", "Lockfiles Claude can read: %s" % ", ".join(unguarded),
+                         "Lockfiles are huge and almost never useful to read.",
+                         "leantokens tune claude --apply (adds Read deny rules)"))
+    dirs = [d for d in BUILD_DIRS if os.path.isdir(os.path.join(root, d)) and "./%s/" % d not in deny]
+    if dirs:
+        findings.append(("medium", "Build output Claude can read: %s" % ", ".join(d + "/" for d in dirs),
+                         "Generated files waste tokens when an agent opens or searches them.",
+                         "leantokens tune claude --apply"))
+
+    env = settings.get("env", {})
+    if "BASH_MAX_OUTPUT_LENGTH" not in env and "BASH_MAX_OUTPUT_LENGTH" not in os.environ:
+        findings.append(("medium", "Command output size is not capped",
+                         "A noisy test run or build can put tens of thousands of tokens into the conversation.",
+                         "leantokens tune claude --apply (sets BASH_MAX_OUTPUT_LENGTH=%s)" % BASH_OUTPUT_CAP))
+
+    for f, t in _big_files(root, BIG_FILE_TOKENS)[:8]:
+        rel = os.path.relpath(f, root)
+        findings.append(("high" if t > 4 * BIG_FILE_TOKENS else "medium",
+                         "%s is %s tokens" % (rel, format(t, ",")),
+                         "Each full read costs this much.",
+                         "Point Claude at the part you mean, or add Read(./%s) to permissions.deny if it is generated." % rel))
+    return findings
+
+
+def cmd_audit(argv):
+    ap = argparse.ArgumentParser(prog="leantokens audit", description="Find what wastes Claude Code tokens in a project.")
+    ap.add_argument("path", nargs="?", default=".", help="project folder (default: current folder)")
+    a = ap.parse_args(argv)
+    findings = find_waste(a.path)
+    marks = {"high": "!!", "medium": "! ", "ok": "✓ "}
+    print("leantokens audit: %s\n" % os.path.abspath(a.path))
+    for sev, title, detail, fix in sorted(findings, key=lambda x: ["high", "medium", "ok"].index(x[0])):
+        print("%s %s" % (marks[sev], title))
+        if detail:
+            print("     %s" % detail)
+        if fix:
+            print("     fix: %s" % fix)
+    issues = [f for f in findings if f[0] != "ok"]
+    print("\n%s" % ("Nothing to fix." if not issues else
+                    "%d thing%s to fix. Also: /clear between tasks, name exact files, ask for short answers."
+                    % (len(issues), "" if len(issues) == 1 else "s")))
+    return 0
+
+
+def tune_plan(root):
+    """The settings changes `tune claude` would make. Returns (path, new_data, added_rules, added_env)."""
+    root = os.path.abspath(root)
+    path = os.path.join(root, ".claude", "settings.local.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except OSError:
+        data = {}
+    except ValueError:
+        raise RuntimeError("%s is not valid JSON; fix it first" % path)
+    existing = set(data.get("permissions", {}).get("deny", [])) | set(_settings(root).get("deny", []))
+    rules = []
+    for n in LOCKFILES:
+        if os.path.exists(os.path.join(root, n)):
+            rules.append("Read(./%s)" % n)
+    for d in BUILD_DIRS:
+        if os.path.isdir(os.path.join(root, d)):
+            rules.append("Read(./%s/**)" % d)
+    for g in GENERATED:
+        rules.append("Read(./**/%s)" % g)
+    rules = [r for r in rules if r not in existing]
+    env_add = {}
+    if "BASH_MAX_OUTPUT_LENGTH" not in data.get("env", {}) and "BASH_MAX_OUTPUT_LENGTH" not in _settings(root).get("env", {}):
+        env_add["BASH_MAX_OUTPUT_LENGTH"] = BASH_OUTPUT_CAP
+    new = json.loads(json.dumps(data))
+    if rules:
+        new.setdefault("permissions", {}).setdefault("deny", []).extend(rules)
+    if env_add:
+        new.setdefault("env", {}).update(env_add)
+    return path, new, rules, env_add
+
+
+def cmd_tune(argv):
+    ap = argparse.ArgumentParser(prog="leantokens tune",
+                                 description="Apply token-saving Claude Code settings to a project.")
+    ap.add_argument("agent", choices=["claude"])
+    ap.add_argument("path", nargs="?", default=".", help="project folder (default: current folder)")
+    ap.add_argument("--apply", action="store_true", help="write the changes (default: only show them)")
+    a = ap.parse_args(argv)
+    try:
+        path, new, rules, env_add = tune_plan(a.path)
+    except RuntimeError as e:
+        print("leantokens: %s" % e, file=sys.stderr)
+        return 1
+    if not rules and not env_add:
+        print("Nothing to change: %s already has these settings." % path)
+        return 0
+    print("Changes for %s (your personal Claude Code settings for this project):" % path)
+    for r in rules:
+        print("  + deny %s" % r)
+    for k, v in env_add.items():
+        print("  + env %s=%s  (Claude Code keeps at most this many characters of each command's output)" % (k, v))
+    if not a.apply:
+        print("\nNothing written. Run again with --apply to save. Restart Claude Code afterwards.")
+        return 0
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        shutil.copy2(path, path + ".bak")
+    with open(path, "w") as f:
+        json.dump(new, f, indent=2)
+        f.write("\n")
+    try:
+        ignored = subprocess.run(["git", "-C", os.path.dirname(path), "check-ignore", "-q", path],
+                                 capture_output=True, timeout=10).returncode == 0
+        in_repo = subprocess.run(["git", "-C", os.path.dirname(path), "rev-parse"],
+                                 capture_output=True, timeout=10).returncode == 0
+        if in_repo and not ignored:
+            print("Note: git does not ignore this file. Add .claude/settings.local.json to .gitignore "
+                  "if you don't want to commit it.")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    print("\nSaved%s. Restart Claude Code to use them. To undo, delete those lines%s."
+          % (" (backup at %s.bak)" % os.path.basename(path) if os.path.exists(path + ".bak") else "",
+             " or restore the backup" if os.path.exists(path + ".bak") else ""))
+    return 0
+
+
 USAGE = """usage:
   leantokens wrap claude [args...]       run Claude Code through the compressor
   leantokens wrap codex [args...]        run OpenAI Codex CLI (API key auth)
@@ -1483,6 +1686,10 @@ Claude chat (claude.ai, desktop app):
   leantokens pack PATH... [--max-tokens N]  bundle files into one compact block for Claude
   leantokens count FILE                  Claude tokens before and after (exact with ANTHROPIC_API_KEY)
   leantokens doctor                      check your Claude setup and say what to fix
+
+Claude Code habits:
+  leantokens audit [PATH]                find what wastes tokens in a project
+  leantokens tune claude [PATH] --apply  add safe token-saving Claude Code settings
   leantokens prompt.txt [-l high]        compress a prompt file (- for stdin)
 
 wrap and proxy options:
@@ -1508,8 +1715,9 @@ def main(argv=None):
         return cmd_eval(argv[1:])
     if argv and argv[0] == "show":
         return cmd_show(argv[1:])
-    if argv and argv[0] in ("doctor", "clip", "pack", "count"):
-        return {"doctor": cmd_doctor, "clip": cmd_clip, "pack": cmd_pack, "count": cmd_count}[argv[0]](argv[1:])
+    if argv and argv[0] in ("doctor", "clip", "pack", "count", "audit", "tune"):
+        return {"doctor": cmd_doctor, "clip": cmd_clip, "pack": cmd_pack, "count": cmd_count,
+                "audit": cmd_audit, "tune": cmd_tune}[argv[0]](argv[1:])
     if argv and argv[0] == "proxy":
         ap = argparse.ArgumentParser(prog="leantokens proxy")
         ap.add_argument("--port", type=int, default=8787)
