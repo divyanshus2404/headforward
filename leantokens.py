@@ -32,6 +32,8 @@ import re
 import shlex
 import shutil
 import signal
+import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -865,6 +867,101 @@ def _save_recording(folder, provider, path, headers, body):
         pass
 
 
+# ---------------------------------------------------------------------------
+# HTTPS proxy mode: for clients that ignore base URLs (Claude Code in the
+# desktop app), act as their HTTPS_PROXY. CONNECTs to an API host listed in
+# INTERCEPT are decrypted with a local CA so the request can be compressed;
+# every other host gets a blind tunnel and is never read.
+# ---------------------------------------------------------------------------
+
+INTERCEPT = {"api.anthropic.com": "https://api.anthropic.com"}
+CA_DIR = os.path.join(os.path.expanduser("~"), ".leantokens", "ca")
+
+
+def _ca_paths():
+    return {k: os.path.join(CA_DIR, f) for k, f in (
+        ("cert", "ca.pem"), ("key", "ca-key.pem"), ("leaf", "leaf.pem"), ("leaf_key", "leaf-key.pem"),
+        ("hosts", "hosts.txt"), ("cnf", "openssl.cnf"))}
+
+
+def ensure_ca():
+    """Create the local CA if needed and a fresh leaf certificate for the INTERCEPT hosts.
+
+    The CA carries a name constraint, so even if its key leaked it could only
+    vouch for those hosts. Keys are readable by you alone.
+    """
+    if not shutil.which("openssl"):
+        raise RuntimeError("HTTPS mode needs the `openssl` command to make its local certificate")
+    p = _ca_paths()
+    hosts = sorted(INTERCEPT)
+    os.makedirs(CA_DIR, mode=0o700, exist_ok=True)
+    os.chmod(CA_DIR, 0o700)
+    with open(p["cnf"], "w") as f:
+        f.write("[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = leantokens local CA\n"
+                "[v3_ca]\nbasicConstraints = critical,CA:TRUE,pathlen:0\nkeyUsage = critical,keyCertSign,cRLSign\n"
+                "subjectKeyIdentifier = hash\nnameConstraints = critical,%s\n"
+                "[v3_leaf]\nbasicConstraints = critical,CA:FALSE\nkeyUsage = critical,digitalSignature,keyEncipherment\n"
+                "extendedKeyUsage = serverAuth\nsubjectAltName = %s\nsubjectKeyIdentifier = hash\n"
+                "authorityKeyIdentifier = keyid\n"
+                % (",".join("permitted;DNS:" + h for h in hosts), ",".join("DNS:" + h for h in hosts)))
+
+    def run(*args):
+        r = subprocess.run(["openssl"] + list(args), capture_output=True, text=True, timeout=60)
+        if r.returncode:
+            raise RuntimeError("openssl %s failed: %s" % (args[0], r.stderr.strip()[-300:]))
+
+    try:
+        same_hosts = open(p["hosts"]).read().split() == hosts
+    except OSError:
+        same_hosts = False
+    old = os.umask(0o077)
+    try:
+        if not (same_hosts and os.path.exists(p["cert"]) and os.path.exists(p["key"])):
+            run("req", "-x509", "-new", "-nodes", "-newkey", "rsa:2048", "-sha256", "-days", "3650",
+                "-keyout", p["key"], "-out", p["cert"], "-config", p["cnf"], "-extensions", "v3_ca")
+            with open(p["hosts"], "w") as f:
+                f.write("\n".join(hosts) + "\n")
+        # A new leaf every start: cheap, and it never gets near expiry (397 days, the browser limit).
+        csr = os.path.join(CA_DIR, "leaf.csr")
+        run("req", "-new", "-nodes", "-newkey", "rsa:2048", "-keyout", p["leaf_key"], "-out", csr,
+            "-subj", "/CN=" + hosts[0], "-config", p["cnf"])
+        run("x509", "-req", "-in", csr, "-CA", p["cert"], "-CAkey", p["key"], "-sha256", "-days", "397",
+            "-set_serial", str(int.from_bytes(os.urandom(8), "big")), "-out", p["leaf"],
+            "-extfile", p["cnf"], "-extensions", "v3_leaf")
+        os.remove(csr)
+    finally:
+        os.umask(old)
+    return p
+
+
+def _tls_context(paths):
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(paths["leaf"], paths["leaf_key"])
+    ctx.set_alpn_protocols(["http/1.1"])
+    return ctx
+
+
+def _pipe(src, dst):
+    try:
+        while True:
+            data = src.recv(65536)
+            if not data:
+                break
+            dst.sendall(data)
+    except OSError:
+        pass
+    finally:
+        for s in (src, dst):
+            try:
+                s.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+
+
+# Endpoints that are model calls; only these get a stats row (not token counting or telemetry).
+MODEL_CALL = re.compile(r"/(messages|chat/completions|responses|completions)$")
+
+
 def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False, cache=False):
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -873,6 +970,15 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
             pass
 
         def _forward(self):
+            # Set on requests decrypted from a CONNECT to an INTERCEPT host.
+            origin = getattr(self, "origin", None)
+            passthrough = False
+            if self.path.startswith(("http://", "https://")):
+                # Absolute form: a client using us as its HTTP proxy.
+                u = urllib.parse.urlsplit(self.path)
+                self.path = urllib.parse.urlunsplit(("", "", u.path or "/", u.query, ""))
+                if not _is_self(u, self.server):
+                    origin, passthrough = "%s://%s" % (u.scheme, u.netloc), True
             if self.path == "/leantokens/health":
                 out = json.dumps({"ok": True, "pid": os.getpid()}).encode()
                 self.send_response(200)
@@ -883,12 +989,15 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
                 return
             n = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(n) if n else b""
-            anthropic = self.path.startswith("/v1/messages") or "anthropic-version" in self.headers
+            anthropic = (self.path.startswith("/v1/messages") or "anthropic-version" in self.headers
+                         or origin in INTERCEPT.values())
             provider = "anthropic" if anthropic else "openai"
-            base = urllib.parse.urlsplit(upstream or UPSTREAMS[provider])
+            model_call = bool(MODEL_CALL.search(urllib.parse.urlsplit(self.path).path))
+            base = urllib.parse.urlsplit(origin or upstream or UPSTREAMS[provider])
             row = None
 
-            is_json = body and "json" in (self.headers.get("Content-Type") or "")
+            # Only LLM API traffic is compressed; anything else proxied passes through untouched.
+            is_json = not passthrough and body and "json" in (self.headers.get("Content-Type") or "")
             if is_json and record and self.command == "POST":
                 _save_recording(record, provider, self.path, dict(self.headers.items()), body)
             if is_json:
@@ -898,7 +1007,8 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
                     cached = cache and provider == "anthropic" and add_cache_control(data)
                     if before > after or cached:
                         body = json.dumps(data, ensure_ascii=False).encode()
-                    if before:
+                    # Record every model call, even with nothing to compress, so stats show all traffic.
+                    if model_call:
                         row = {"t": int(time.time()), "p": provider, "b": before, "a": after,
                                "req": len(body)}
                 except ValueError:
@@ -956,7 +1066,40 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
 
         do_GET = do_POST = do_PUT = do_DELETE = do_PATCH = _forward
 
+        def do_CONNECT(self):
+            host, _, port = self.path.rpartition(":")
+            self.close_connection = True
+            ctx = getattr(self.server, "tls_context", None)
+            if ctx and host in INTERCEPT:
+                self.send_response(200, "Connection Established")
+                self.end_headers()
+                try:
+                    tls = ctx.wrap_socket(self.connection, server_side=True)
+                except (ssl.SSLError, OSError) as e:
+                    _log_error("TLS handshake for %s failed: %r. Does the client trust %s? "
+                               "(NODE_EXTRA_CA_CERTS)" % (host, e, _ca_paths()["cert"]))
+                    return
+                inner = Handler.__new__(Handler)
+                inner.origin = INTERCEPT[host]
+                Handler.__init__(inner, tls, self.client_address, self.server)
+                return
+            try:
+                up = socket.create_connection((host, int(port or 443)), timeout=30)
+                up.settimeout(None)
+            except (OSError, ValueError) as e:
+                self.send_error(502, "leantokens: could not reach %s (%s)" % (self.path, e))
+                return
+            self.send_response(200, "Connection Established")
+            self.end_headers()
+            threading.Thread(target=_pipe, args=(up, self.connection), daemon=True).start()
+            _pipe(self.connection, up)
+
     return Handler
+
+
+def _is_self(url, server):
+    host = (url.hostname or "").lower()
+    return host in ("127.0.0.1", "localhost", "::1") and (url.port or 80) == server.server_address[1]
 
 
 class _QuietServer(http.server.ThreadingHTTPServer):
@@ -967,9 +1110,11 @@ class _QuietServer(http.server.ThreadingHTTPServer):
         _log_error("request from %s failed:\n%s" % (client_address, traceback.format_exc()))
 
 
-def start_proxy(port=0, upstream=None, log=None, lossy=False, record=None, smart=False, cache=False):
+def start_proxy(port=0, upstream=None, log=None, lossy=False, record=None, smart=False, cache=False,
+                https=False):
     handler = make_handler(upstream, log, lossy, record, smart, cache)
     srv = _QuietServer(("127.0.0.1", port), handler)
+    srv.tls_context = _tls_context(ensure_ca()) if https else None
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv
@@ -988,7 +1133,7 @@ def summarize(rows):
     Tokens saved are estimated from characters removed, converted at the
     tokens-per-character rate the provider actually billed for those requests.
     """
-    s = {"requests": len(rows), "in": 0, "cached": 0, "out": 0, "saved": 0.0, "measured": 0}
+    s = {"requests": sum(r["p"] != "hook" for r in rows), "in": 0, "cached": 0, "out": 0, "saved": 0.0, "measured": 0}
     for r in rows:
         removed = r["b"] - r["a"]
         if "in" in r and r.get("req"):
@@ -2122,19 +2267,63 @@ def _settings_path(target):
     return os.path.join(os.path.abspath(os.path.expanduser(target)), ".claude", "settings.local.json")
 
 
+def _read_settings(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except OSError:
+        return {}
+    except ValueError:
+        raise RuntimeError("%s is not valid JSON; fix it first" % path)
+
+
+def _write_settings(path, data):
+    if not data.get("env"):
+        data.pop("env", None)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if os.path.exists(path):
+        shutil.copy2(path, path + ".bak")
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+
+
+def _https_env():
+    return {"HTTPS_PROXY": DESKTOP_URL, "NODE_EXTRA_CA_CERTS": _ca_paths()["cert"],
+            "NO_PROXY": "localhost,127.0.0.1,::1"}
+
+
+def _set_https_env(path, on):
+    """Add (on) or remove the settings that route the desktop app through the proxy as its HTTPS_PROXY.
+
+    The desktop app pins ANTHROPIC_BASE_URL, but Claude Code still honors
+    HTTPS_PROXY and NODE_EXTRA_CA_CERTS from settings.
+    """
+    data = _read_settings(path)
+    env = data.setdefault("env", {})
+    want = _https_env()
+    if on:
+        for k in ("HTTPS_PROXY", "NODE_EXTRA_CA_CERTS"):
+            if env.get(k) not in (None, want[k]):
+                raise RuntimeError("%s already sets %s=%s; leaving it alone" % (path, k, env[k]))
+        env.update({k: v for k, v in want.items() if k != "NO_PROXY" or k not in env})
+    else:
+        mine = [k for k, v in want.items() if env.get(k) == v]
+        if not mine:
+            return False
+        for k in mine:
+            del env[k]
+    _write_settings(path, data)
+    return True
+
+
 def _set_base_url(path, url, previous=None):
     """Set (url) or remove (None) ANTHROPIC_BASE_URL in a Claude Code settings file.
 
     previous is a gateway URL the background proxy forwards to: setting may
     replace it, and removing puts it back.
     """
-    try:
-        with open(path) as f:
-            data = json.load(f)
-    except OSError:
-        data = {}
-    except ValueError:
-        raise RuntimeError("%s is not valid JSON; fix it first" % path)
+    data = _read_settings(path)
     env = data.setdefault("env", {})
     if url:
         if env.get("ANTHROPIC_BASE_URL") not in (None, url, previous):
@@ -2147,14 +2336,7 @@ def _set_base_url(path, url, previous=None):
             env["ANTHROPIC_BASE_URL"] = previous
         else:
             del env["ANTHROPIC_BASE_URL"]
-            if not env:
-                del data["env"]
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    if os.path.exists(path):
-        shutil.copy2(path, path + ".bak")
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-        f.write("\n")
+    _write_settings(path, data)
     return True
 
 
@@ -2171,6 +2353,13 @@ def desktop_on(target, mode_args):
             raise RuntimeError("%s sets ANTHROPIC_BASE_URL=%s, but the background proxy already forwards to %s; "
                                "leaving it alone" % (path, current, chained))
         chained = current
+    https = "--https" in mode_args
+    if https:
+        ensure_ca()  # before launchd starts the proxy, so the two never race to create it
+        env = _read_settings(path).get("env") or {}
+        for k, v in _https_env().items():
+            if k != "NO_PROXY" and env.get(k) not in (None, v):
+                raise RuntimeError("%s already sets %s=%s; leaving it alone" % (path, k, env[k]))
     os.makedirs(os.path.dirname(DESKTOP_PLIST), exist_ok=True)
     with open(DESKTOP_PLIST, "w") as f:
         f.write(_plist(mode_args + (["--upstream", chained] if chained else [])))
@@ -2189,6 +2378,8 @@ def desktop_on(target, mode_args):
         raise RuntimeError("the background proxy did not start (launchctl: %s). See ~/.leantokens/proxy.log"
                            % (r.stderr.strip() or "no error"))
     _set_base_url(path, DESKTOP_URL, chained)
+    for p in [path] + state["settings"]:
+        _set_https_env(p, https)  # also drops it from settings when turned on again without --https
     if path not in state["settings"]:
         state["settings"].append(path)
     if current and current.rstrip("/") != DESKTOP_URL:
@@ -2203,7 +2394,8 @@ def desktop_on(target, mode_args):
 def desktop_off():
     state = _desktop_state()
     previous = state.get("previous", {})
-    changed = [p for p in state.get("settings", []) if _set_base_url(p, None, previous.get(p))]
+    changed = [p for p in state.get("settings", [])
+               if [_set_base_url(p, None, previous.get(p)), _set_https_env(p, False)] != [False, False]]
     if sys.platform == "darwin":
         _launchctl("bootout", "gui/%d/%s" % (os.getuid(), DESKTOP_LABEL))
     if os.path.exists(DESKTOP_PLIST):
@@ -2219,24 +2411,31 @@ def cmd_desktop(argv):
     ap.add_argument("target", nargs="?", default=".",
                     help="project folder to turn on (default: current folder), or `global` for every project")
     ap.add_argument("--smart", action="store_true", help="use smart mode in the background proxy")
+    ap.add_argument("--https", action="store_true",
+                    help="also reach Claude Code in the desktop app, which ignores base URLs, "
+                         "by acting as its HTTPS proxy (decrypts api.anthropic.com with a local CA)")
     a = ap.parse_args(argv)
     if a.action == "on":
         try:
-            path = desktop_on(a.target, ["--smart"] if a.smart else [])
+            path = desktop_on(a.target, (["--smart"] if a.smart else []) + (["--https"] if a.https else []))
         except RuntimeError as e:
             print("leantokens: %s" % e, file=sys.stderr)
             return 1
         up = _desktop_state().get("upstream")
         print("On. The background proxy runs at %s and starts at login.\n"
               "Claude Code now uses it via %s.\n" % (DESKTOP_URL, path)
-              + ("Chain: Claude Code -> leantokens -> %s\n" % up if up else "") +
+              + ("Chain: Claude Code -> leantokens -> %s\n" % up if up else "")
+              + ("HTTPS mode: the desktop app reaches it via HTTPS_PROXY, trusting %s.\n"
+                 "If the proxy is down, those sessions can't connect: run `leantokens desktop off`.\n"
+                 % _ca_paths()["cert"] if a.https else "") +
               "Start a new Claude Code session (existing ones keep their old settings).\n"
               "Undo everything: leantokens desktop off")
         return 0
     if a.action == "off":
         changed = desktop_off()
         print("Off. Background proxy stopped and removed.%s" % (
-            "" if not changed else "\nRestored ANTHROPIC_BASE_URL in:\n  " + "\n  ".join(changed)))
+            "" if not changed else "\nRestored ANTHROPIC_BASE_URL (and any HTTPS_PROXY it added) in:\n  "
+            + "\n  ".join(changed)))
         print("Start a new Claude Code session to go back to connecting directly.")
         return 0
     state = _desktop_state()
@@ -2449,6 +2648,7 @@ Claude Code anywhere, including the desktop app:
 
 Always-on proxy for terminal Claude Code (macOS):
   leantokens desktop on [PROJECT|global] run the proxy in the background and point Claude Code at it
+  leantokens desktop on global --https    also reach Claude Code in the desktop app (HTTPS_PROXY)
   leantokens desktop status              is it running, and which settings use it
   leantokens desktop off                 stop it and undo every settings change
   leantokens prompt.txt [-l high]        compress a prompt file (- for stdin)
@@ -2490,6 +2690,8 @@ def main(argv=None):
         ap.add_argument("--cache", action="store_true", help="add Anthropic prompt-caching markers")
         ap.add_argument("--record", metavar="FOLDER", help="save original requests for `leantokens eval`")
         ap.add_argument("--quiet", action="store_true", help="don't print a line per request")
+        ap.add_argument("--https", action="store_true",
+                        help="also act as an HTTPS_PROXY, decrypting api.anthropic.com with a local CA")
         a = ap.parse_args(argv[1:])
 
         def log(row):
@@ -2499,10 +2701,18 @@ def main(argv=None):
         for prov, base in list(UPSTREAMS.items()):
             if urllib.parse.urlsplit(base).netloc in own:  # would forward to itself forever
                 UPSTREAMS[prov] = {"anthropic": "https://api.anthropic.com", "openai": "https://api.openai.com"}[prov]
-        srv = start_proxy(a.port, a.upstream, None if a.quiet else log, a.lossy, a.record, a.smart, a.cache)
+        try:
+            srv = start_proxy(a.port, a.upstream, None if a.quiet else log, a.lossy, a.record, a.smart, a.cache,
+                              a.https)
+        except RuntimeError as e:
+            print("leantokens: %s" % e, file=sys.stderr)
+            return 1
         url = "http://127.0.0.1:%d" % srv.server_address[1]
         print("leantokens proxy on %s\n  Anthropic: ANTHROPIC_BASE_URL=%s\n  OpenAI:    OPENAI_BASE_URL=%s/v1"
               % (url, url, url), file=sys.stderr, flush=True)
+        if a.https:
+            print("  HTTPS:     HTTPS_PROXY=%s NODE_EXTRA_CA_CERTS=%s" % (url, _ca_paths()["cert"]),
+                  file=sys.stderr, flush=True)
         try:
             while True:
                 time.sleep(3600)
