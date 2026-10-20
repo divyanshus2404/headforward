@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>leantokens · cut the tokens your AI agent spends</title>
+<title>headforward · cut the tokens your AI agent spends</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,31 +10,31 @@
 <link rel="stylesheet" href="/style.css">
 <link rel="canonical" href="https://leantokens.vercel.app/">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="leantokens">
-<meta property="og:title" content="leantokens · cut the tokens your AI agent spends">
+<meta property="og:site_name" content="headforward">
+<meta property="og:title" content="headforward · cut the tokens your AI agent spends">
 <meta property="og:description" content="Shrink the tool output Claude Code, Codex and LLM apps send to the model, without hiding failures. Claude Code hooks, an always-on proxy, JSON tables and log cleanup. Open source, one Python file.">
 <meta property="og:url" content="https://leantokens.vercel.app/">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#10162a">
 
-<meta name="description" content="leantokens cuts the tokens Claude Code, Codex and LLM apps spend by compressing tool output before it reaches the model. Open source, one Python file.">
+<meta name="description" content="headforward cuts the tokens Claude Code, Codex and LLM apps spend by compressing tool output before it reaches the model. Open source, one Python file.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2064%2064%22%3E%3Crect%20width=%2264%22%20height=%2264%22%20rx=%2214%22%20fill=%22%23111726%22/%3E%3Crect%20x=%2216%22%20y=%2212%22%20width=%227%22%20height=%2240%22%20rx=%223.5%22%20fill=%22%23eef1f9%22/%3E%3Crect%20x=%2234%22%20y=%2216%22%20width=%227%22%20height=%2236%22%20rx=%223.5%22%20fill=%22%23eef1f9%22/%3E%3Crect%20x=%2227%22%20y=%2226%22%20width=%2225%22%20height=%226%22%20rx=%223%22%20fill=%22%23ff5a4e%22/%3E%3C/svg%3E">
 
 <script>(function(){try{var m=localStorage.getItem("lt-theme");if(m==="light"||m==="dark")document.documentElement.dataset.theme=m}catch(e){}})();</script>
 </head>
 <body>
-<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#111726"/><rect class="stem" x="16" y="12" width="7" height="40" rx="3.5" fill="#eef1f9"/><rect class="stem" x="34" y="16" width="7" height="36" rx="3.5" fill="#eef1f9"/><rect class="cut" x="27" y="26" width="25" height="6" rx="3" fill="#ff5a4e"/></svg>leantokens</a><div class="links"><a href="/docs/">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/leantokens">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
+<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#111726"/><rect class="stem" x="16" y="12" width="7" height="40" rx="3.5" fill="#eef1f9"/><rect class="stem" x="34" y="16" width="7" height="36" rx="3.5" fill="#eef1f9"/><rect class="cut" x="27" y="26" width="25" height="6" rx="3" fill="#ff5a4e"/></svg>headforward</a><div class="links"><a href="/docs/">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/headforward">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
 <header class="hero">
   <div class="in">
     <div class="copy">
-      <span class="eyebrow">leantokens · open source · one Python file</span>
+      <span class="eyebrow">headforward · open source · one Python file</span>
       <h1>Your agent reads <s>everything</s> what matters.</h1>
-      <p>Coding agents spend most of their tokens re-reading tool output: test runs, build logs, git output, JSON. leantokens shrinks that output before the model sees it. Errors are always kept, and you keep using Claude Code exactly as before.</p>
-      <div class="cmd"><code>leantokens <b>hooks install global</b></code><button id="copy-hero" data-copy="leantokens hooks install global">Copy</button></div>
-      <p class="first">First install it: <code>pip install leantokens</code> · <a href="/docs/#quickstart">Quick start</a></p>
+      <p>Coding agents spend most of their tokens re-reading tool output: test runs, build logs, git output, JSON. headforward shrinks that output before the model sees it. Errors are always kept, and you keep using Claude Code exactly as before.</p>
+      <div class="cmd"><code>headforward <b>hooks install global</b></code><button id="copy-hero" data-copy="headforward hooks install global">Copy</button></div>
+      <p class="first">First install it: <code>pip install headforward</code> · <a href="/docs/#quickstart">Quick start</a></p>
       <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Claude desktop app</span><span>Codex CLI</span><span>Aider</span><span>Anthropic &amp; OpenAI SDKs</span></div>
     </div>
-    <div class="trace" aria-label="A real build log before and after leantokens">
+    <div class="trace" aria-label="A real build log before and after headforward">
       <div class="top"><span>Claude Code · Bash(make) · hook on</span><span>best case</span></div>
       <div class="body">
         <div class="row"><span class="k">cmd</span><span>make</span></div>
@@ -42,7 +42,7 @@
         <div class="row"><span class="k">kept</span><span>compiling module...  <span class="dim">[x300]</span></span></div>
         <div class="row"><span class="k">kept</span><span>BUILD OK: 300 modules</span></div>
         <div class="row"><span class="k">errors</span><span class="dim">always kept</span></div>
-        <div class="row"><span class="k">full</span><span class="dim">leantokens show ID</span></div>
+        <div class="row"><span class="k">full</span><span class="dim">headforward show ID</span></div>
         <div class="bar"><i style="width:1%"></i></div>
         <div class="row"><span class="big">99%</span><span style="align-self:end">less on a repetitive build log<br><span class="dim">mixed real output: about 12% less</span></span></div>
       </div>
@@ -58,7 +58,7 @@
         <h2>Smaller context. Nothing dropped.</h2>
       </div>
       <div class="facts">
-        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once, the values as rows, and any value shared by every row just once. It rebuilds to the exact original.</p></div>
+        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. headforward writes the keys once, the values as rows, and any value shared by every row just once. It rebuilds to the exact original.</p></div>
         <div><h3>Repeats become pointers</h3><p>Agents re-read the same file and rerun the same tests. A tool result identical to an earlier one becomes a one-line pointer to it.</p></div>
         <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Terminal color codes, trailing spaces and runs of blank lines go.</p></div>
         <div><h3>Prompt caching keeps working</h3><p>The same tool output always compresses to the same bytes and earlier turns never change, so Anthropic and OpenAI cache hits still land.</p></div>
@@ -88,7 +88,7 @@
           <p>400 real coding-agent sessions from the public SWE-agent dataset, mostly reading and editing source code. <code>--smart</code> also recognizes lines the agent has already seen.</p>
         </div>
       </div>
-      <p class="note">Your own numbers: <code>leantokens stats</code> reports what Anthropic or OpenAI actually billed and what was saved.</p>
+      <p class="note">Your own numbers: <code>headforward stats</code> reports what Anthropic or OpenAI actually billed and what was saved.</p>
     </section>
 
     <section id="examples">
@@ -186,19 +186,19 @@ ERROR POST /api/checkout 500: payment timeout</pre></div>
           <span class="tag">Hooks</span>
           <h3>Filter noisy commands</h3>
           <p>Tests, installs, builds, <code>git log</code>, <code>ls -l</code> and <code>grep</code> pass through the filter. Runs in every session, desktop app included.</p>
-          <div class="term has-copy">leantokens hooks install global<button class="copy" data-copy="leantokens hooks install global">Copy</button></div>
+          <div class="term has-copy">headforward hooks install global<button class="copy" data-copy="headforward hooks install global">Copy</button></div>
         </div>
         <div class="way">
           <span class="tag">Always-on proxy</span>
           <h3>Compress every request</h3>
           <p>Starts at login (macOS) and serves terminal Claude Code in every project. Off restores your settings.</p>
-          <div class="term has-copy">leantokens desktop on global<button class="copy" data-copy="leantokens desktop on global">Copy</button></div>
+          <div class="term has-copy">headforward desktop on global<button class="copy" data-copy="headforward desktop on global">Copy</button></div>
         </div>
         <div class="way">
           <span class="tag">Wrap</span>
           <h3>One session at a time</h3>
           <p>Starts a private proxy, launches the agent pointed at it, and prints what you saved when you quit.</p>
-          <div class="term has-copy">leantokens wrap claude<button class="copy" data-copy="leantokens wrap claude">Copy</button></div>
+          <div class="term has-copy">headforward wrap claude<button class="copy" data-copy="headforward wrap claude">Copy</button></div>
         </div>
       </div>
       <div class="matrix-wrap">
@@ -217,23 +217,23 @@ ERROR POST /api/checkout 500: payment timeout</pre></div>
     <section id="chain">
       <div class="head">
         <span class="eyebrow">Gateway chaining</span>
-        <h2>Already using a gateway? leantokens goes in front of it.</h2>
+        <h2>Already using a gateway? headforward goes in front of it.</h2>
         <p class="lede">If your Claude Code settings already point <code>ANTHROPIC_BASE_URL</code> at a router, cost tracker or company proxy, <code>desktop on</code> takes that URL as its upstream, so nothing you rely on is skipped.</p>
       </div>
       <div class="chain">
         <div class="hops" aria-label="Request path">
           <div class="hop"><b>Claude Code</b><span>your session</span></div>
-          <div class="hop lt"><b>leantokens</b><code>127.0.0.1:8787</code><span>shrinks tool output</span></div>
+          <div class="hop lt"><b>headforward</b><code>127.0.0.1:8787</code><span>shrinks tool output</span></div>
           <div class="hop"><b>Your gateway</b><code>e.g. 127.0.0.1:17322</code><span>routing, logging, keys</span></div>
           <div class="hop"><b>Anthropic</b><code>api.anthropic.com</code><span>the model</span></div>
         </div>
         <div class="chain-cols">
           <div><h3>Turn it on</h3><div class="term"><span class="c"># detects the existing URL and forwards to it</span>
-leantokens desktop on global
-leantokens desktop status</div></div>
+headforward desktop on global
+headforward desktop status</div></div>
           <div><h3>Turn it off</h3><div class="term"><span class="c"># stops the proxy and puts your URL back</span>
-leantokens desktop off</div>
-            <p>An <code>ANTHROPIC_BASE_URL</code> exported in your shell beats Claude Code settings and skips the chain. <code>leantokens doctor</code> tells you when that happens.</p></div>
+headforward desktop off</div>
+            <p>An <code>ANTHROPIC_BASE_URL</code> exported in your shell beats Claude Code settings and skips the chain. <code>headforward doctor</code> tells you when that happens.</p></div>
         </div>
       </div>
     </section>
@@ -246,7 +246,7 @@ leantokens desktop off</div>
       </div>
       <div class="matrix-wrap">
         <table class="matrix">
-          <thead><tr><th scope="col">Output</th><th scope="col">Raw tokens</th><th scope="col">rtk</th><th scope="col">Headroom</th><th scope="col">leantokens</th></tr></thead>
+          <thead><tr><th scope="col">Output</th><th scope="col">Raw tokens</th><th scope="col">rtk</th><th scope="col">Headroom</th><th scope="col">headforward</th></tr></thead>
           <tbody>
             <tr><th scope="row">Unit tests, 2 failures</th><td>1,899</td><td><span class="no">67 · failures hidden</span></td><td><span class="yes">1,899 ✓</span></td><td><span class="yes">293 ✓</span></td></tr>
             <tr><th scope="row">git log --stat, 40 commits</th><td>4,869</td><td><span class="yes">1,271 ✓</span></td><td><span class="yes">4,869 ✓</span></td><td><span class="yes">3,800 ✓</span></td></tr>
@@ -259,7 +259,7 @@ leantokens desktop off</div>
           </tbody>
         </table>
       </div>
-      <p class="note">rtk 0.43.0 command wrappers, Headroom 0.41.0 default <code>compress()</code>, leantokens hook plus proxy. rtk saves its full output to a file the agent can read later. Small benchmark, written by the leantokens author; reproduce with <code>python3 bench/compare_tools.py</code>.</p>
+      <p class="note">rtk 0.43.0 command wrappers, Headroom 0.41.0 default <code>compress()</code>, headforward hook plus proxy. rtk saves its full output to a file the agent can read later. Small benchmark, written by the headforward author; reproduce with <code>python3 bench/compare_tools.py</code>.</p>
     </section>
 
     <section id="install">
@@ -271,24 +271,24 @@ leantokens desktop off</div>
       <ol class="steps">
         <li><div>
           <p>Install from PyPI.</p>
-          <div class="term has-copy">pip install leantokens<button class="copy" data-copy="pip install leantokens">Copy</button></div>
-          <p class="note">No pip? Copy the script instead, save it as <code>leantokens.py</code>, and run <code>python3 leantokens.py</code> wherever this page says <code>leantokens</code>.</p>
-          <div><button class="btn primary" id="copy-script">Copy leantokens.py</button></div>
+          <div class="term has-copy">pip install headforward<button class="copy" data-copy="pip install headforward">Copy</button></div>
+          <p class="note">No pip? Copy the script instead, save it as <code>headforward.py</code>, and run <code>python3 headforward.py</code> wherever this page says <code>headforward</code>.</p>
+          <div><button class="btn primary" id="copy-script">Copy headforward.py</button></div>
           <div class="term has-copy"><span class="c"># macOS: save what you just copied</span>
-pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.py">Copy</button></div>
-          <p class="note">Linux: <code>xclip -o -sel clip &gt; leantokens.py</code>. Windows: paste into Notepad and save as <code>leantokens.py</code>.</p>
+pbpaste &gt; headforward.py<button class="copy" data-copy="pbpaste > headforward.py">Copy</button></div>
+          <p class="note">Linux: <code>xclip -o -sel clip &gt; headforward.py</code>. Windows: paste into Notepad and save as <code>headforward.py</code>.</p>
         </div></li>
         <li><div>
           <p>Turn on the hook, then start a new Claude Code session.</p>
-          <div class="term has-copy">leantokens hooks install global<button class="copy" data-copy="leantokens hooks install global">Copy</button></div>
+          <div class="term has-copy">headforward hooks install global<button class="copy" data-copy="headforward hooks install global">Copy</button></div>
         </div></li>
         <li><div>
           <p>Check your setup. It says exactly what to fix.</p>
-          <div class="term has-copy">leantokens doctor<button class="copy" data-copy="leantokens doctor">Copy</button></div>
+          <div class="term has-copy">headforward doctor<button class="copy" data-copy="headforward doctor">Copy</button></div>
         </div></li>
         <li><div>
           <p>Optional: exact token counts.</p>
-          <div class="term has-copy">pip install "leantokens[exact]"<button class="copy" data-copy='pip install "leantokens[exact]"'>Copy</button></div>
+          <div class="term has-copy">pip install "headforward[exact]"<button class="copy" data-copy='pip install "headforward[exact]"'>Copy</button></div>
         </div></li>
       </ol>
       <details>
@@ -303,12 +303,12 @@ pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.p
         <h2>Before you try it.</h2>
       </div>
       <div class="faq">
-        <details><summary>Does it change the model's answers?</summary><p>The default rules are lossless: every compressed result can be rebuilt exactly, or points to an identical copy already in the conversation. Whether a model behaves the same on your work is something you can check: <code>leantokens eval</code> replays your recorded requests with and without compression and compares the answers.</p></details>
+        <details><summary>Does it change the model's answers?</summary><p>The default rules are lossless: every compressed result can be rebuilt exactly, or points to an identical copy already in the conversation. Whether a model behaves the same on your work is something you can check: <code>headforward eval</code> replays your recorded requests with and without compression and compares the answers.</p></details>
         <details><summary>Is my API key or Claude sign-in safe?</summary><p>The proxy runs only on your computer, listens on 127.0.0.1, and passes credentials straight to Anthropic or OpenAI. They are never stored or logged.</p></details>
         <details><summary>Does it break prompt caching?</summary><p>No. Compression is deterministic and never rewrites earlier turns, so each request still begins with the same bytes as the last one and cache hits keep landing.</p></details>
-        <details><summary>Does it work with claude.ai or chatgpt.com?</summary><p>Those sites talk directly to their own servers, so no proxy can sit in between. You can compress text before pasting it: <code>pbpaste | leantokens - -l high | pbcopy</code> on macOS.</p></details>
-        <details><summary>How do I know it's working?</summary><p>In a new Claude Code session, run something noisy like your tests. Shortened output carries a line such as <code>[40 passing test lines omitted; full output: leantokens show ID]</code>. <code>leantokens stats</code> counts every request it touched.</p></details>
-        <details><summary>What if something goes wrong?</summary><p>Undo it in one command: <code>leantokens hooks uninstall global</code> or <code>leantokens desktop off</code>. Both restore your Claude Code settings from a backup, and plain <code>claude</code> works exactly as before.</p></details>
+        <details><summary>Does it work with claude.ai or chatgpt.com?</summary><p>Those sites talk directly to their own servers, so no proxy can sit in between. You can compress text before pasting it: <code>pbpaste | headforward - -l high | pbcopy</code> on macOS.</p></details>
+        <details><summary>How do I know it's working?</summary><p>In a new Claude Code session, run something noisy like your tests. Shortened output carries a line such as <code>[40 passing test lines omitted; full output: headforward show ID]</code>. <code>headforward stats</code> counts every request it touched.</p></details>
+        <details><summary>What if something goes wrong?</summary><p>Undo it in one command: <code>headforward hooks uninstall global</code> or <code>headforward desktop off</code>. Both restore your Claude Code settings from a backup, and plain <code>claude</code> works exactly as before.</p></details>
         <details><summary>What does it cost?</summary><p>Nothing. It's MIT-licensed, one Python file, no account and no telemetry.</p></details>
       </div>
     </section>
@@ -330,7 +330,7 @@ pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.p
     </section>
   </div>
 </main>
-<footer class="site-foot"><div class="in"><span>leantokens · MIT license</span><a href="/docs/">Documentation</a><a href="https://github.com/divyanshus2404/leantokens">Source on GitHub</a></div></footer>
+<footer class="site-foot"><div class="in"><span>headforward · MIT license</span><a href="/docs/">Documentation</a><a href="https://github.com/divyanshus2404/headforward">Source on GitHub</a></div></footer>
 
 <script>
 const LEVELS = ["light", "medium", "high", "max"];
@@ -434,7 +434,7 @@ function compress(text, level) {
   out = out.replace(/\n{3,}/g, "\n\n").trim();
   return out.charAt(0).toUpperCase() + out.slice(1);
 }
-/* Tool-output compressor: mirrors compress_tool() in leantokens.py. */
+/* Tool-output compressor: mirrors compress_tool() in headforward.py. */
 const ANSI = /\x1b\[[0-9;?]*[A-Za-z]/g;
 const LINE_NO = /^ +(\d+)(\t|→)/gm;
 function tabulate(o) {
@@ -574,7 +574,7 @@ $("copy-out").addEventListener("click", e => copyText(result, e.currentTarget));
 document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => copyText(b.dataset.copy, b)));
 
 let script = "";
-fetch("leantokens.py").then(r => r.ok ? r.text() : Promise.reject()).then(s => {
+fetch("headforward.py").then(r => r.ok ? r.text() : Promise.reject()).then(s => {
   script = s; $("script-view").textContent = s;
 }).catch(() => { $("script-view").textContent = "Couldn't load the script. Refresh the page to try again."; });
 $("copy-script").addEventListener("click", e => {

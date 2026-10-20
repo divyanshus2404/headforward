@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""leantokens: cut the tokens Claude, ChatGPT and coding agents spend.
+"""headforward: cut the tokens Claude, ChatGPT and coding agents spend.
 
 Single file, zero dependencies, Python 3.9+. Install `tiktoken` for exact counts.
 
 Coding agents (biggest savings: compresses tool output, JSON, logs, file reads):
-  leantokens wrap claude            # Claude Code
-  leantokens wrap codex             # OpenAI Codex CLI (API key auth)
-  leantokens proxy --port 8787      # any app or SDK: set its base URL
-  leantokens stats                  # tokens saved so far
+  headforward wrap claude            # Claude Code
+  headforward wrap codex             # OpenAI Codex CLI (API key auth)
+  headforward proxy --port 8787      # any app or SDK: set its base URL
+  headforward stats                  # tokens saved so far
 
 Prompts:
-  leantokens prompt.txt -l high
-  pbpaste | leantokens - -l high | pbcopy
-  leantokens api.json --tool        # tool output: JSON tables, log repeats
+  headforward prompt.txt -l high
+  pbpaste | headforward - -l high | pbcopy
+  headforward api.json --tool        # tool output: JSON tables, log repeats
 
 Prompt levels:
   light   whitespace and blank lines
@@ -373,7 +373,10 @@ def _walk(body):
 REF_MIN_RUN = 3          # shortest run of repeated lines worth a reference
 REF_MIN_CHARS = 220      # ...and only when the run is ~2.5x longer than the reference
 BIG_LINES = 400          # outputs longer than this become expandable in smart mode
-BLOB_DIR = os.path.join(os.path.expanduser("~"), ".leantokens", "outputs")
+# headforward was called leantokens; its data folder moves on first run (see _migrate_home).
+HOME_DIR = os.path.join(os.path.expanduser("~"), ".headforward")
+OLD_HOME = os.path.join(os.path.expanduser("~"), ".leantokens")
+BLOB_DIR = os.path.join(HOME_DIR, "outputs")
 _ERRORISH = re.compile(r"error|exception|traceback|fail|warn|fatal|panic|assert", re.I)
 
 
@@ -525,7 +528,7 @@ def _filter_noise(text):
             blob = blob or _save_blob(text)
             if not blob:
                 return text
-            out.append("[%d %s lines omitted; full output: leantokens show %s]" % (j - i, kinds[i], blob))
+            out.append("[%d %s lines omitted; full output: headforward show %s]" % (j - i, kinds[i], blob))
         else:
             out.extend(lines[i:j])
         i = j
@@ -657,15 +660,15 @@ def _compact_shapes(text):
         if len(short) > 0.9 * len(text):
             return text
         blob = _save_blob(text)
-        return short + "\n[compacted; full output: leantokens show %s]" % blob if blob else text
+        return short + "\n[compacted; full output: headforward show %s]" % blob if blob else text
     return text
 
 
 def _expandable(text):
     """Shorten a very long output to its start, end and error lines.
 
-    The full text is saved under ~/.leantokens/outputs so the agent can read any
-    part of it with `leantokens show ID --lines A-B`.
+    The full text is saved under ~/.headforward/outputs so the agent can read any
+    part of it with `headforward show ID --lines A-B`.
     """
     lines = text.split("\n")
     if len(lines) <= BIG_LINES:
@@ -676,8 +679,8 @@ def _expandable(text):
     head, tail = 80, 40
     middle = [(n, l) for n, l in enumerate(lines[head:-tail], head) if _ERRORISH.search(l)][:40]
     out = lines[:head]
-    out.append("[leantokens: %d of %d lines omitted. Error-like lines from the omitted part follow. "
-               "To read any part, run: leantokens show %s --lines A-B]" % (len(lines) - head - tail, len(lines), blob))
+    out.append("[headforward: %d of %d lines omitted. Error-like lines from the omitted part follow. "
+               "To read any part, run: headforward show %s --lines A-B]" % (len(lines) - head - tail, len(lines), blob))
     out += ["%d: %s" % (n + 1, l) for n, l in middle]
     out.append("[end of excerpt; last %d lines follow]" % tail)
     return "\n".join(out + lines[-tail:])
@@ -703,7 +706,7 @@ def compress_request(body, lossy=False, smart=False):
       3. Runs of 6+ lines already shown in an earlier result become a reference
          to those exact lines (agents re-open the same files constantly).
       4. Outputs over 400 lines keep start, end and error lines; the rest is
-         saved locally and readable with `leantokens show`.
+         saved locally and readable with `headforward show`.
     lossy=True also shortens runs of near-identical log lines.
 
     Earlier turns never change and the output is deterministic, so prompt caches
@@ -829,7 +832,7 @@ UPSTREAMS = {
     "anthropic": os.environ.get("ANTHROPIC_BASE_URL") or "https://api.anthropic.com",
     "openai": re.sub(r"/v1/?$", "", os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com"),
 }
-STATS_FILE = os.path.join(os.path.expanduser("~"), ".leantokens", "stats.jsonl")
+STATS_FILE = os.path.join(HOME_DIR, "stats.jsonl")
 HOP = {"host", "content-length", "accept-encoding", "connection", "keep-alive",
        "transfer-encoding", "proxy-connection", "upgrade", "te"}
 SECRET_HEADERS = {"authorization", "x-api-key", "api-key", "cookie", "openai-organization", "openai-project"}
@@ -855,7 +858,7 @@ def _append_stats(row):
 
 
 def _save_recording(folder, provider, path, headers, body):
-    """Save an original (uncompressed) request for `leantokens eval`. No secrets."""
+    """Save an original (uncompressed) request for `headforward eval`. No secrets."""
     try:
         os.makedirs(folder, exist_ok=True)
         name = "%d-%s.json" % (time.time() * 1000, hashlib.sha1(body).hexdigest()[:8])
@@ -875,7 +878,7 @@ def _save_recording(folder, provider, path, headers, body):
 # ---------------------------------------------------------------------------
 
 INTERCEPT = {"api.anthropic.com": "https://api.anthropic.com"}
-CA_DIR = os.path.join(os.path.expanduser("~"), ".leantokens", "ca")
+CA_DIR = os.path.join(HOME_DIR, "ca")
 
 
 def _ca_paths():
@@ -897,7 +900,7 @@ def ensure_ca():
     os.makedirs(CA_DIR, mode=0o700, exist_ok=True)
     os.chmod(CA_DIR, 0o700)
     with open(p["cnf"], "w") as f:
-        f.write("[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = leantokens local CA\n"
+        f.write("[req]\ndistinguished_name = dn\nprompt = no\n[dn]\nCN = headforward local CA\n"
                 "[v3_ca]\nbasicConstraints = critical,CA:TRUE,pathlen:0\nkeyUsage = critical,keyCertSign,cRLSign\n"
                 "subjectKeyIdentifier = hash\nnameConstraints = critical,%s\n"
                 "[v3_leaf]\nbasicConstraints = critical,CA:FALSE\nkeyUsage = critical,digitalSignature,keyEncipherment\n"
@@ -979,7 +982,7 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
                 self.path = urllib.parse.urlunsplit(("", "", u.path or "/", u.query, ""))
                 if not _is_self(u, self.server):
                     origin, passthrough = "%s://%s" % (u.scheme, u.netloc), True
-            if self.path == "/leantokens/health":
+            if self.path in ("/headforward/health", "/leantokens/health"):
                 out = json.dumps({"ok": True, "pid": os.getpid()}).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1025,7 +1028,7 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
                 conn.request(self.command, base.path.rstrip("/") + self.path, body or None, headers)
                 resp = conn.getresponse()
             except OSError as e:
-                msg = ("leantokens: could not reach %s (%s)" % (base.netloc, e)).encode()
+                msg = ("headforward: could not reach %s (%s)" % (base.netloc, e)).encode()
                 self.send_response(502)
                 self.send_header("Content-Type", "text/plain")
                 self.send_header("Content-Length", str(len(msg)))
@@ -1087,7 +1090,7 @@ def make_handler(upstream=None, log=None, lossy=False, record=None, smart=False,
                 up = socket.create_connection((host, int(port or 443)), timeout=30)
                 up.settimeout(None)
             except (OSError, ValueError) as e:
-                self.send_error(502, "leantokens: could not reach %s (%s)" % (self.path, e))
+                self.send_error(502, "headforward: could not reach %s (%s)" % (self.path, e))
                 return
             self.send_response(200, "Connection Established")
             self.end_headers()
@@ -1185,7 +1188,7 @@ def _claude_signed_in(env):
 
 def _run_agent(cmd, env):
     """Run the agent in the foreground. Ctrl-C belongs to the agent (it cancels a
-    response in Claude Code), so leantokens ignores it until the agent exits."""
+    response in Claude Code), so headforward ignores it until the agent exits."""
     old = signal.signal(signal.SIGINT, signal.SIG_IGN)
     try:
         proc = subprocess.Popen(cmd, env=env)
@@ -1224,15 +1227,15 @@ def cmd_wrap(argv, upstream=None):
         return 2
     agent, args = argv[0], argv[1:]
     if not shutil.which(agent):
-        print("leantokens: '%s' is not installed or not on your PATH" % agent, file=sys.stderr)
+        print("headforward: '%s' is not installed or not on your PATH" % agent, file=sys.stderr)
         return 127
-    smart = smart or bool(os.environ.get("LEANTOKENS_SMART"))
-    lossy = lossy or bool(os.environ.get("LEANTOKENS_LOSSY"))
+    smart = smart or bool(_env("SMART"))
+    lossy = lossy or bool(_env("LOSSY"))
     env = dict(os.environ)
 
     if agent == "claude" and _claude_signed_in(env) is False:
-        print("leantokens: Claude Code is not signed in on this computer. Type /login inside Claude Code\n"
-              "            once (or set ANTHROPIC_API_KEY); leantokens passes your sign-in through.",
+        print("headforward: Claude Code is not signed in on this computer. Type /login inside Claude Code\n"
+              "            once (or set ANTHROPIC_API_KEY); headforward passes your sign-in through.",
               file=sys.stderr)
 
     rows = []
@@ -1240,7 +1243,7 @@ def cmd_wrap(argv, upstream=None):
         srv = start_proxy(upstream=upstream, log=rows.append, lossy=lossy, record=record, smart=smart, cache=cache)
     except OSError as e:
         # Fail open: the agent still runs, just without compression.
-        print("leantokens: could not start the proxy (%s); running %s without compression" % (e, agent),
+        print("headforward: could not start the proxy (%s); running %s without compression" % (e, agent),
               file=sys.stderr)
         return _run_agent([agent] + args, env)
 
@@ -1250,16 +1253,16 @@ def cmd_wrap(argv, upstream=None):
     if agent == "aider":
         env["ANTHROPIC_BASE_URL"] = url
     mode =" + ".join(m for m, on in (("smart", smart), ("lossy", lossy), ("cache", cache)) if on) or "lossless"
-    print("leantokens: compressing %s (%s). Savings print when it exits; `leantokens stats` for totals."
+    print("headforward: compressing %s (%s). Savings print when it exits; `headforward stats` for totals."
           % (agent, mode), file=sys.stderr)
     try:
         code = _run_agent([agent] + args, env)
     finally:
         srv.shutdown()
     if rows:
-        print("leantokens: this session %s" % _fmt_summary(summarize(rows)), file=sys.stderr)
+        print("headforward: this session %s" % _fmt_summary(summarize(rows)), file=sys.stderr)
     else:
-        print("leantokens: no model requests went through the proxy this session.", file=sys.stderr)
+        print("headforward: no model requests went through the proxy this session.", file=sys.stderr)
     return code
 
 
@@ -1271,7 +1274,7 @@ def cmd_stats():
     except (OSError, ValueError):
         pass
     if not rows:
-        print("No savings recorded yet. Run an agent through `leantokens wrap claude` first.")
+        print("No savings recorded yet. Run an agent through `headforward wrap claude` first.")
         return 0
     day = time.time() - 86400
     for label, sel in (("Last 24 hours", [r for r in rows if r["t"] >= day]), ("All time", rows)):
@@ -1343,7 +1346,7 @@ def _same(a, b):
 
 
 def cmd_eval(argv):
-    ap = argparse.ArgumentParser(prog="leantokens eval",
+    ap = argparse.ArgumentParser(prog="headforward eval",
                                  description="Replay recorded requests with and without compression.")
     ap.add_argument("folder", help="folder written by `wrap --record` or `proxy --record`")
     ap.add_argument("--tokens-only", action="store_true",
@@ -1409,23 +1412,23 @@ def cmd_eval(argv):
 
 
 def cmd_show(argv):
-    ap = argparse.ArgumentParser(prog="leantokens show", description="Print an output that --smart shortened.")
-    ap.add_argument("id", help="the ID from the [leantokens: ... omitted] note")
+    ap = argparse.ArgumentParser(prog="headforward show", description="Print an output that --smart shortened.")
+    ap.add_argument("id", help="the ID from the [headforward: ... omitted] note")
     ap.add_argument("--lines", help="line range, e.g. 120-180")
     a = ap.parse_args(argv)
     if not re.fullmatch(r"[0-9a-f]{12}", a.id):
-        print("leantokens: not a valid output ID: %s" % a.id, file=sys.stderr)
+        print("headforward: not a valid output ID: %s" % a.id, file=sys.stderr)
         return 2
     try:
         lines = open(os.path.join(BLOB_DIR, a.id + ".txt"), encoding="utf-8").read().split("\n")
     except OSError:
-        print("leantokens: no saved output with ID %s" % a.id, file=sys.stderr)
+        print("headforward: no saved output with ID %s" % a.id, file=sys.stderr)
         return 1
     lo, hi = 1, len(lines)
     if a.lines:
         m = re.fullmatch(r"(\d+)-(\d+)", a.lines)
         if not m:
-            print("leantokens: --lines must look like 120-180", file=sys.stderr)
+            print("headforward: --lines must look like 120-180", file=sys.stderr)
             return 2
         lo, hi = max(1, int(m.group(1))), min(len(lines), int(m.group(2)))
     for n in range(lo, hi + 1):
@@ -1450,8 +1453,8 @@ def _bad(msg, fix):
 
 
 def cmd_doctor(argv):
-    """Check everything leantokens needs to work with Claude, and say how to fix what isn't."""
-    print("leantokens doctor\n")
+    """Check everything headforward needs to work with Claude, and say how to fix what isn't."""
+    print("headforward doctor\n")
     problems = 0
     if sys.version_info >= (3, 9):
         _ok("Python %d.%d" % sys.version_info[:2])
@@ -1459,13 +1462,13 @@ def cmd_doctor(argv):
         problems += 1
         _bad("Python %d.%d is too old" % sys.version_info[:2], "install Python 3.9 or newer")
 
-    where = shutil.which("leantokens")
+    where = shutil.which("headforward")
     if where:
-        _ok("leantokens command on PATH (%s)" % where)
+        _ok("headforward command on PATH (%s)" % where)
     else:
         problems += 1
-        _bad("`leantokens` is not on your PATH",
-             "pip install the package, or run the file directly: python3 leantokens.py ...")
+        _bad("`headforward` is not on your PATH",
+             "pip install the package, or run the file directly: python3 headforward.py ...")
 
     claude = shutil.which("claude")
     if claude:
@@ -1484,7 +1487,7 @@ def cmd_doctor(argv):
         else:
             print("  ? could not check Claude Code sign-in")
     else:
-        print("  - Claude Code not installed (only needed for `leantokens wrap claude`)")
+        print("  - Claude Code not installed (only needed for `headforward wrap claude`)")
 
     base = os.environ.get("ANTHROPIC_BASE_URL")
     if base:
@@ -1502,9 +1505,9 @@ def cmd_doctor(argv):
             else:
                 problems += 1
                 _bad("ANTHROPIC_BASE_URL is %s but nothing is listening there, so Claude requests will fail" % base,
-                     "unset ANTHROPIC_BASE_URL, or start that proxy; `leantokens wrap claude` needs neither")
+                     "unset ANTHROPIC_BASE_URL, or start that proxy; `headforward wrap claude` needs neither")
         else:
-            _ok("ANTHROPIC_BASE_URL is %s; leantokens forwards there" % base)
+            _ok("ANTHROPIC_BASE_URL is %s; headforward forwards there" % base)
     configured = _claude_settings_base_url()
     if configured and base and base.rstrip("/") != configured.rstrip("/"):
         # The environment beats the env block in Claude Code's settings.json.
@@ -1512,7 +1515,7 @@ def cmd_doctor(argv):
         _bad("your shell's ANTHROPIC_BASE_URL=%s overrides Claude Code settings (%s)" % (base, configured),
              "unset ANTHROPIC_BASE_URL in this shell if you want Claude Code to use %s" % configured)
     elif configured and configured.rstrip("/") == DESKTOP_URL:
-        _ok("Claude Code uses the leantokens background proxy (%s)" % DESKTOP_URL)
+        _ok("Claude Code uses the headforward background proxy (%s)" % DESKTOP_URL)
 
     srv = None
     try:
@@ -1546,7 +1549,7 @@ def cmd_doctor(argv):
         _ok("stats file writable (%s)" % STATS_FILE)
     except OSError:
         problems += 1
-        _bad("cannot write %s" % STATS_FILE, "check permissions on ~/.leantokens")
+        _bad("cannot write %s" % STATS_FILE, "check permissions on ~/.headforward")
 
     try:
         import tiktoken  # noqa: F401
@@ -1554,12 +1557,12 @@ def cmd_doctor(argv):
     except ImportError:
         print("  - tiktoken not installed (optional): pip install tiktoken")
     if os.environ.get("ANTHROPIC_API_KEY"):
-        _ok("exact Claude token counts available (`leantokens count`)")
+        _ok("exact Claude token counts available (`headforward count`)")
     else:
         print("  - set ANTHROPIC_API_KEY for exact Claude token counts (optional; counting is free)")
 
-    print("\n" + ("All good. Run: leantokens wrap claude" if not problems else
-                  "%d problem%s found; fix %s and run `leantokens doctor` again."
+    print("\n" + ("All good. Run: headforward wrap claude" if not problems else
+                  "%d problem%s found; fix %s and run `headforward doctor` again."
                   % (problems, "" if problems == 1 else "s", "it" if problems == 1 else "them")))
     return 1 if problems else 0
 
@@ -1609,7 +1612,7 @@ def _saving_line(before, after):
 
 
 def cmd_clip(argv):
-    ap = argparse.ArgumentParser(prog="leantokens clip",
+    ap = argparse.ArgumentParser(prog="headforward clip",
                                  description="Compress the clipboard in place, ready to paste into claude.ai.")
     ap.add_argument("-l", "--level", default="medium", choices=LEVELS, help="prompt level for prose (default medium)")
     ap.add_argument("--print", action="store_true", help="print the result instead of replacing the clipboard")
@@ -1617,10 +1620,10 @@ def cmd_clip(argv):
     try:
         text = read_clipboard()
     except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-        print("leantokens: could not read the clipboard: %s" % e, file=sys.stderr)
+        print("headforward: could not read the clipboard: %s" % e, file=sys.stderr)
         return 1
     if not text.strip():
-        print("leantokens: the clipboard is empty. Copy some text first.", file=sys.stderr)
+        print("headforward: the clipboard is empty. Copy some text first.", file=sys.stderr)
         return 1
     out = compress_any(text, a.level)
     if a.print:
@@ -1629,9 +1632,9 @@ def cmd_clip(argv):
         try:
             write_clipboard(out)
         except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-            print("leantokens: could not write the clipboard: %s" % e, file=sys.stderr)
+            print("headforward: could not write the clipboard: %s" % e, file=sys.stderr)
             return 1
-    print("leantokens: clipboard %s. %s" % ("printed" if a.print else "compressed, ready to paste",
+    print("headforward: clipboard %s. %s" % ("printed" if a.print else "compressed, ready to paste",
                                              _saving_line(text, out)), file=sys.stderr)
     return 0
 
@@ -1723,7 +1726,7 @@ def pack_files(paths, budget=None, outline_code=False):
 
 
 def cmd_pack(argv):
-    ap = argparse.ArgumentParser(prog="leantokens pack",
+    ap = argparse.ArgumentParser(prog="headforward pack",
                                  description="Bundle files into one compact block to paste into claude.ai.")
     ap.add_argument("paths", nargs="+", help="files or folders (git-ignored files are left out)")
     ap.add_argument("--max-tokens", type=int, help="stop adding files once this many tokens are used")
@@ -1734,7 +1737,7 @@ def cmd_pack(argv):
     a = ap.parse_args(argv)
     text, included, skipped = pack_files(a.paths, a.max_tokens, a.outline)
     if not included:
-        print("leantokens: no text files to pack.", file=sys.stderr)
+        print("headforward: no text files to pack.", file=sys.stderr)
         return 1
     raw_chars = sum(n for _, n, _ in included)
     if a.out:
@@ -1749,10 +1752,10 @@ def cmd_pack(argv):
             write_clipboard(text)
             dest = "copied to the clipboard, ready to paste"
         except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-            print("leantokens: could not write the clipboard (%s); use --out FILE" % e, file=sys.stderr)
+            print("headforward: could not write the clipboard (%s); use --out FILE" % e, file=sys.stderr)
             return 1
     tokens, exact = count(text)
-    print("leantokens: packed %d file%s, %s tokens%s (from %s characters of source), %s."
+    print("headforward: packed %d file%s, %s tokens%s (from %s characters of source), %s."
           % (len(included), "" if len(included) == 1 else "s", format(tokens, ","),
              "" if exact else " (estimate)", format(raw_chars, ","), dest), file=sys.stderr)
     top = sorted(included, key=lambda x: -x[2])[:5]
@@ -1775,7 +1778,7 @@ def claude_count(text, model=CLAUDE_MODEL):
 
 
 def cmd_count(argv):
-    ap = argparse.ArgumentParser(prog="leantokens count", description="Count tokens for Claude, before and after compression.")
+    ap = argparse.ArgumentParser(prog="headforward count", description="Count tokens for Claude, before and after compression.")
     ap.add_argument("file", nargs="?", default="-", help="file, or - for stdin (default)")
     ap.add_argument("--model", default=CLAUDE_MODEL, help="Claude model (default %s)" % CLAUDE_MODEL)
     ap.add_argument("-l", "--level", default="medium", choices=LEVELS)
@@ -1787,7 +1790,7 @@ def cmd_count(argv):
         if before is not None:
             after = claude_count(out, a.model)
     except RuntimeError as e:
-        print("leantokens: Anthropic count failed (%s); showing an estimate" % e, file=sys.stderr)
+        print("headforward: Anthropic count failed (%s); showing an estimate" % e, file=sys.stderr)
         before = None
     if before is None:
         before, after = max(1, len(text) // 4), max(1, len(out) // 4)
@@ -1796,7 +1799,7 @@ def cmd_count(argv):
         how = "exact, %s" % a.model
     pct = 100.0 * (before - after) / before if before else 0
     print("as is:            %s tokens" % format(before, ","))
-    print("after leantokens: %s tokens  (%.0f%% fewer)" % (format(after, ","), pct))
+    print("after headforward: %s tokens  (%.0f%% fewer)" % (format(after, ","), pct))
     print("(%s)" % how)
     return 0
 
@@ -1886,17 +1889,17 @@ def find_waste(root):
     if unguarded:
         findings.append(("medium", "Lockfiles Claude can read: %s" % ", ".join(unguarded),
                          "Lockfiles are huge and almost never useful to read.",
-                         "leantokens tune claude --apply (adds Read deny rules)"))
+                         "headforward tune claude --apply (adds Read deny rules)"))
     dirs = [d for d in BUILD_DIRS if os.path.isdir(os.path.join(root, d)) and "./%s/" % d not in deny]
     if dirs:
         findings.append(("medium", "Build output Claude can read: %s" % ", ".join(d + "/" for d in dirs),
                          "Generated files waste tokens when an agent opens or searches them.",
-                         "leantokens tune claude --apply"))
+                         "headforward tune claude --apply"))
 
     if "bashOutputMaxChars" not in settings:
         findings.append(("medium", "Command output size is not capped",
                          "A noisy test run or build can put tens of thousands of tokens into the conversation.",
-                         "leantokens tune claude --apply (sets bashOutputMaxChars=%d; longer output is saved to a "
+                         "headforward tune claude --apply (sets bashOutputMaxChars=%d; longer output is saved to a "
                          "file Claude can still open)" % OUTPUT_CAP))
 
     for f, t in _big_files(root, BIG_FILE_TOKENS)[:8]:
@@ -1909,12 +1912,12 @@ def find_waste(root):
 
 
 def cmd_audit(argv):
-    ap = argparse.ArgumentParser(prog="leantokens audit", description="Find what wastes Claude Code tokens in a project.")
+    ap = argparse.ArgumentParser(prog="headforward audit", description="Find what wastes Claude Code tokens in a project.")
     ap.add_argument("path", nargs="?", default=".", help="project folder (default: current folder)")
     a = ap.parse_args(argv)
     findings = find_waste(a.path)
     marks = {"high": "!!", "medium": "! ", "ok": "✓ "}
-    print("leantokens audit: %s\n" % os.path.abspath(a.path))
+    print("headforward audit: %s\n" % os.path.abspath(a.path))
     for sev, title, detail, fix in sorted(findings, key=lambda x: ["high", "medium", "ok"].index(x[0])):
         print("%s %s" % (marks[sev], title))
         if detail:
@@ -1969,7 +1972,7 @@ def tune_plan(root):
 
 
 def cmd_tune(argv):
-    ap = argparse.ArgumentParser(prog="leantokens tune",
+    ap = argparse.ArgumentParser(prog="headforward tune",
                                  description="Apply token-saving Claude Code settings to a project.")
     ap.add_argument("agent", choices=["claude"])
     ap.add_argument("path", nargs="?", default=".", help="project folder (default: current folder)")
@@ -1978,7 +1981,7 @@ def cmd_tune(argv):
     try:
         path, new, rules, env_add = tune_plan(a.path)
     except RuntimeError as e:
-        print("leantokens: %s" % e, file=sys.stderr)
+        print("headforward: %s" % e, file=sys.stderr)
         return 1
     if not rules and not env_add:
         print("Nothing to change: %s already has these settings." % path)
@@ -2078,7 +2081,7 @@ def _usage_table(rows, key):
 
 
 def cmd_usage(argv):
-    ap = argparse.ArgumentParser(prog="leantokens usage",
+    ap = argparse.ArgumentParser(prog="headforward usage",
                                  description="Claude Code token use from its local logs (~/.claude/projects).")
     ap.add_argument("--days", type=int, default=7, help="how many days back (default 7; 0 = all)")
     ap.add_argument("--by", choices=["day", "model", "project"], default="day")
@@ -2120,7 +2123,7 @@ def cmd_usage(argv):
     per_reply = allin // max(1, tot["replies"])
     if share >= 0.9:
         print("Caching already works well. Each reply resent about %s tokens of conversation on average;\n"
-              "shorter sessions (/clear, /compact) and `leantokens wrap claude` shrink that." % f(per_reply))
+              "shorter sessions (/clear, /compact) and `headforward wrap claude` shrink that." % f(per_reply))
     else:
         print("Only %.0f%% of input was cached. Uncached input costs about 10x more: keep CLAUDE.md and the start\n"
               "of each session stable, and avoid switching models mid-session." % (100 * share))
@@ -2183,7 +2186,7 @@ def code_map(paths, budget=None):
 
 
 def cmd_map(argv):
-    ap = argparse.ArgumentParser(prog="leantokens map",
+    ap = argparse.ArgumentParser(prog="headforward map",
                                  description="A compact outline of a codebase: every file's classes and functions with line numbers.")
     ap.add_argument("paths", nargs="*", default=["."])
     ap.add_argument("--max-tokens", type=int, help="stop at this many tokens")
@@ -2191,17 +2194,17 @@ def cmd_map(argv):
     a = ap.parse_args(argv)
     text = code_map(a.paths, a.max_tokens)
     if not text:
-        print("leantokens: no supported source files found (Python, JS/TS, Go, Rust, Java-family, Ruby).", file=sys.stderr)
+        print("headforward: no supported source files found (Python, JS/TS, Go, Rust, Java-family, Ruby).", file=sys.stderr)
         return 1
     if a.copy:
         try:
             write_clipboard(text)
         except (RuntimeError, OSError, subprocess.SubprocessError) as e:
-            print("leantokens: could not write the clipboard (%s)" % e, file=sys.stderr)
+            print("headforward: could not write the clipboard (%s)" % e, file=sys.stderr)
             return 1
     else:
         sys.stdout.write(text + "\n")
-    print("leantokens: map is %s tokens%s." % (format(count(text)[0], ","), ", copied" if a.copy else ""),
+    print("headforward: map is %s tokens%s." % (format(count(text)[0], ","), ", copied" if a.copy else ""),
           file=sys.stderr)
     return 0
 
@@ -2211,19 +2214,37 @@ def cmd_map(argv):
 # Works for Claude Code in the desktop app, which `wrap` can't reach.
 # ---------------------------------------------------------------------------
 
-DESKTOP_LABEL = "com.leantokens.proxy"
+DESKTOP_LABEL = "com.headforward.proxy"
 DESKTOP_PORT = 8787
 DESKTOP_URL = "http://127.0.0.1:%d" % DESKTOP_PORT
-DESKTOP_STATE = os.path.join(os.path.expanduser("~"), ".leantokens", "desktop.json")
+DESKTOP_STATE = os.path.join(HOME_DIR, "desktop.json")
 DESKTOP_PLIST = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", DESKTOP_LABEL + ".plist")
+OLD_LABEL = "com.leantokens.proxy"  # the background proxy from before the rename
+OLD_PLIST = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", OLD_LABEL + ".plist")
+
+
+def _remove_old_service():
+    """Stop and remove a background proxy installed under the old name; it holds the same port."""
+    if not os.path.exists(OLD_PLIST):
+        return False
+    _launchctl("bootout", "gui/%d/%s" % (os.getuid(), OLD_LABEL))
+    os.remove(OLD_PLIST)
+    for _ in range(20):  # wait for it to let go of the port
+        if not _healthy(0.2):
+            break
+        time.sleep(0.25)
+    return True
 
 
 def _healthy(timeout=1.0):
-    try:
-        with urllib.request.urlopen(DESKTOP_URL + "/leantokens/health", timeout=timeout) as r:
-            return json.loads(r.read()).get("ok") is True
-    except (OSError, ValueError):
-        return False
+    for path in ("/headforward/health", "/leantokens/health"):  # a proxy started before the rename
+        try:
+            with urllib.request.urlopen(DESKTOP_URL + path, timeout=timeout) as r:
+                if json.loads(r.read()).get("ok") is True:
+                    return True
+        except (OSError, ValueError):
+            pass
+    return False
 
 
 def _desktop_state():
@@ -2242,7 +2263,7 @@ def _save_desktop_state(state):
 
 def _plist(mode_args):
     args = [sys.executable, os.path.abspath(__file__), "proxy", "--port", str(DESKTOP_PORT), "--quiet"] + mode_args
-    log = os.path.join(os.path.expanduser("~"), ".leantokens", "proxy.log")
+    log = os.path.join(HOME_DIR, "proxy.log")
     items = "".join("    <string>%s</string>\n" % a.replace("&", "&amp;").replace("<", "&lt;") for a in args)
     return ('<?xml version="1.0" encoding="UTF-8"?>\n'
             '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
@@ -2288,6 +2309,11 @@ def _write_settings(path, data):
         f.write("\n")
 
 
+def _old_https_env():
+    """What `desktop on --https` wrote before the rename; still ours to replace or remove."""
+    return dict(_https_env(), NODE_EXTRA_CA_CERTS=os.path.join(OLD_HOME, "ca", "ca.pem"))
+
+
 def _https_env():
     return {"HTTPS_PROXY": DESKTOP_URL, "NODE_EXTRA_CA_CERTS": _ca_paths()["cert"],
             "NO_PROXY": "localhost,127.0.0.1,::1"}
@@ -2301,14 +2327,14 @@ def _set_https_env(path, on):
     """
     data = _read_settings(path)
     env = data.setdefault("env", {})
-    want = _https_env()
+    want, old = _https_env(), _old_https_env()
     if on:
         for k in ("HTTPS_PROXY", "NODE_EXTRA_CA_CERTS"):
-            if env.get(k) not in (None, want[k]):
+            if env.get(k) not in (None, want[k], old[k]):
                 raise RuntimeError("%s already sets %s=%s; leaving it alone" % (path, k, env[k]))
         env.update({k: v for k, v in want.items() if k != "NO_PROXY" or k not in env})
     else:
-        mine = [k for k, v in want.items() if env.get(k) == v]
+        mine = [k for k in want if env.get(k) in (want[k], old[k])]
         if not mine:
             return False
         for k in mine:
@@ -2342,7 +2368,7 @@ def _set_base_url(path, url, previous=None):
 
 def desktop_on(target, mode_args):
     if sys.platform != "darwin":
-        raise RuntimeError("`leantokens desktop` uses macOS launchd; on other systems run `leantokens proxy` yourself")
+        raise RuntimeError("`headforward desktop` uses macOS launchd; on other systems run `headforward proxy` yourself")
     path = _settings_path(target)
     state = _desktop_state()
     chained = state.get("upstream")
@@ -2358,12 +2384,13 @@ def desktop_on(target, mode_args):
         ensure_ca()  # before launchd starts the proxy, so the two never race to create it
         env = _read_settings(path).get("env") or {}
         for k, v in _https_env().items():
-            if k != "NO_PROXY" and env.get(k) not in (None, v):
+            if k != "NO_PROXY" and env.get(k) not in (None, v, _old_https_env()[k]):
                 raise RuntimeError("%s already sets %s=%s; leaving it alone" % (path, k, env[k]))
     os.makedirs(os.path.dirname(DESKTOP_PLIST), exist_ok=True)
     with open(DESKTOP_PLIST, "w") as f:
         f.write(_plist(mode_args + (["--upstream", chained] if chained else [])))
     domain = "gui/%d" % os.getuid()
+    _remove_old_service()
     _launchctl("bootout", domain + "/" + DESKTOP_LABEL)
     for _ in range(10):  # bootout finishes asynchronously; bootstrap fails (error 5) until it has
         r = _launchctl("bootstrap", domain, DESKTOP_PLIST)
@@ -2375,7 +2402,7 @@ def desktop_on(target, mode_args):
             break
         time.sleep(0.2)
     else:
-        raise RuntimeError("the background proxy did not start (launchctl: %s). See ~/.leantokens/proxy.log"
+        raise RuntimeError("the background proxy did not start (launchctl: %s). See ~/.headforward/proxy.log"
                            % (r.stderr.strip() or "no error"))
     _set_base_url(path, DESKTOP_URL, chained)
     for p in [path] + state["settings"]:
@@ -2398,6 +2425,7 @@ def desktop_off():
                if [_set_base_url(p, None, previous.get(p)), _set_https_env(p, False)] != [False, False]]
     if sys.platform == "darwin":
         _launchctl("bootout", "gui/%d/%s" % (os.getuid(), DESKTOP_LABEL))
+        _remove_old_service()
     if os.path.exists(DESKTOP_PLIST):
         os.remove(DESKTOP_PLIST)
     _save_desktop_state({"settings": []})
@@ -2405,7 +2433,7 @@ def desktop_off():
 
 
 def cmd_desktop(argv):
-    ap = argparse.ArgumentParser(prog="leantokens desktop",
+    ap = argparse.ArgumentParser(prog="headforward desktop",
                                  description="Compress Claude Code sessions from the desktop app (macOS).")
     ap.add_argument("action", choices=["on", "off", "status"])
     ap.add_argument("target", nargs="?", default=".",
@@ -2419,17 +2447,17 @@ def cmd_desktop(argv):
         try:
             path = desktop_on(a.target, (["--smart"] if a.smart else []) + (["--https"] if a.https else []))
         except RuntimeError as e:
-            print("leantokens: %s" % e, file=sys.stderr)
+            print("headforward: %s" % e, file=sys.stderr)
             return 1
         up = _desktop_state().get("upstream")
         print("On. The background proxy runs at %s and starts at login.\n"
               "Claude Code now uses it via %s.\n" % (DESKTOP_URL, path)
-              + ("Chain: Claude Code -> leantokens -> %s\n" % up if up else "")
+              + ("Chain: Claude Code -> headforward -> %s\n" % up if up else "")
               + ("HTTPS mode: the desktop app reaches it via HTTPS_PROXY, trusting %s.\n"
-                 "If the proxy is down, those sessions can't connect: run `leantokens desktop off`.\n"
+                 "If the proxy is down, those sessions can't connect: run `headforward desktop off`.\n"
                  % _ca_paths()["cert"] if a.https else "") +
               "Start a new Claude Code session (existing ones keep their old settings).\n"
-              "Undo everything: leantokens desktop off")
+              "Undo everything: headforward desktop off")
         return 0
     if a.action == "off":
         changed = desktop_off()
@@ -2442,7 +2470,7 @@ def cmd_desktop(argv):
     up = _healthy()
     print("background proxy: %s" % ("running at %s" % DESKTOP_URL if up else
                                      "NOT running" + (" (installed but down: Claude Code sessions pointed at it "
-                                                      "will fail; run `leantokens desktop on` or `off`)"
+                                                      "will fail; run `headforward desktop on` or `off`)"
                                                       if os.path.exists(DESKTOP_PLIST) else "")))
     print("mode: %s" % (" ".join(state.get("mode") or []) or "lossless"))
     if state.get("upstream"):
@@ -2450,14 +2478,14 @@ def cmd_desktop(argv):
     for p in state.get("settings", []):
         print("used by: %s" % p)
     if not state.get("settings"):
-        print("used by: nothing (run `leantokens desktop on PROJECT` or `on global`)")
+        print("used by: nothing (run `headforward desktop on PROJECT` or `on global`)")
     return 0 if (up or not state.get("settings")) else 1
 
 
 # ---------------------------------------------------------------------------
 # hooks: compress noisy command output inside Claude Code itself.
 # A PreToolUse hook rewrites test/install/build commands to pipe their output
-# through `leantokens filter`. Works in the desktop app and the terminal alike,
+# through `headforward filter`. Works in the desktop app and the terminal alike,
 # because it runs inside Claude Code rather than on the network path.
 # ---------------------------------------------------------------------------
 
@@ -2476,7 +2504,7 @@ NOISY = re.compile(
     r"|bundle\s+install\b|composer\s+install\b|brew\s+(?:install|upgrade)\b"
     r"|git\s+log\b|ls\s+-[a-zA-Z]*l|grep\s|rg\s|log\s+show\b"
     r")")
-UNSAFE = re.compile(r"<<|(^|[^&|])&\s*$|\bcd\s|leantokens(?:\.py)?\s+(?:filter|hook-bash)\b"
+UNSAFE = re.compile(r"<<|(^|[^&|])&\s*$|\bcd\s|(?:headforward|leantokens)(?:\.py)?\s+(?:filter|hook-bash)\b"
                     r"|\|\s*(?:tee|less|more|head|tail)\b")
 
 
@@ -2484,7 +2512,7 @@ def filter_output(text):
     """Conservative cleanup for command output: colors, routine runs, repeats.
 
     Error-like lines are always kept; anything removed is saved and readable
-    with `leantokens show ID`.
+    with `headforward show ID`.
     """
     s = ANSI.sub("", text).replace("\r\n", "\n")
     s = "\n".join(l.split("\r")[-1] for l in s.split("\n"))  # progress bars redraw with \r
@@ -2512,7 +2540,7 @@ def cmd_filter(argv):
 
 
 def _self_cmd():
-    """How a hook should call this exact leantokens, independent of PATH."""
+    """How a hook should call this exact headforward, independent of PATH."""
     return "%s %s" % (shlex.quote(sys.executable), shlex.quote(os.path.abspath(__file__)))
 
 
@@ -2543,6 +2571,10 @@ def cmd_hook_bash(argv):
 HOOK_MARK = " hook-bash"
 
 
+def _is_our_hook(command):
+    return HOOK_MARK in command and ("headforward" in command or "leantokens" in command)
+
+
 def _hook_settings_path(target):
     return _settings_path(target)
 
@@ -2557,12 +2589,15 @@ def hooks_install(target):
     except ValueError:
         raise RuntimeError("%s is not valid JSON; fix it first" % path)
     pre = data.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    for group in pre:
-        for h in group.get("hooks", []):
-            if HOOK_MARK in h.get("command", "") and "leantokens" in h.get("command", ""):
-                return path, False
-    pre.append({"matcher": "Bash",
-                "hooks": [{"type": "command", "command": _self_cmd() + HOOK_MARK, "timeout": 10}]})
+    ours = [h for group in pre for h in group.get("hooks", []) if _is_our_hook(h.get("command", ""))]
+    if ours:
+        if all(h["command"] == _self_cmd() + HOOK_MARK for h in ours):
+            return path, False
+        for h in ours:  # installed under the old name or from another copy: point it here
+            h["command"] = _self_cmd() + HOOK_MARK
+    else:
+        pre.append({"matcher": "Bash",
+                    "hooks": [{"type": "command", "command": _self_cmd() + HOOK_MARK, "timeout": 10}]})
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path):
         shutil.copy2(path, path + ".bak")
@@ -2585,7 +2620,7 @@ def hooks_uninstall(target):
     removed = False
     for group in pre:
         keep = [h for h in group.get("hooks", [])
-                if not (HOOK_MARK in h.get("command", "") and "leantokens" in h.get("command", ""))]
+                if not _is_our_hook(h.get("command", ""))]
         removed |= len(keep) != len(group.get("hooks", []))
         group["hooks"] = keep
     data["hooks"]["PreToolUse"] = [g for g in pre if g.get("hooks")] if pre else pre
@@ -2602,7 +2637,7 @@ def hooks_uninstall(target):
 
 
 def cmd_hooks(argv):
-    ap = argparse.ArgumentParser(prog="leantokens hooks",
+    ap = argparse.ArgumentParser(prog="headforward hooks",
                                  description="Compress noisy command output inside Claude Code (desktop app and terminal).")
     ap.add_argument("action", choices=["install", "uninstall"])
     ap.add_argument("target", nargs="?", default=".", help="project folder (default: current), or `global`")
@@ -2610,11 +2645,11 @@ def cmd_hooks(argv):
     try:
         path, changed = (hooks_install if a.action == "install" else hooks_uninstall)(a.target)
     except RuntimeError as e:
-        print("leantokens: %s" % e, file=sys.stderr)
+        print("headforward: %s" % e, file=sys.stderr)
         return 1
     if a.action == "install":
         print(("Installed in %s.\nNew Claude Code sessions there will filter test, install and build output.\n"
-               "Undo: leantokens hooks uninstall %s" if changed else "Already installed in %s.") % (
+               "Undo: headforward hooks uninstall %s" if changed else "Already installed in %s.") % (
                   (path, a.target) if changed else (path,)))
     else:
         print(("Removed from %s." if changed else "Nothing to remove in %s.") % path)
@@ -2622,54 +2657,82 @@ def cmd_hooks(argv):
 
 
 USAGE = """usage:
-  leantokens wrap claude [args...]       run Claude Code through the compressor
-  leantokens wrap codex [args...]        run OpenAI Codex CLI (API key auth)
-  leantokens wrap aider [args...]        run Aider
-  leantokens proxy [--port 8787]         run the proxy for any app or SDK
-  leantokens stats                       real billed tokens and estimated savings
-  leantokens eval FOLDER [--tokens-only] replay recorded requests, compare savings and answers
-  leantokens show ID [--lines A-B]       print an output that --smart shortened
+  headforward wrap claude [args...]       run Claude Code through the compressor
+  headforward wrap codex [args...]        run OpenAI Codex CLI (API key auth)
+  headforward wrap aider [args...]        run Aider
+  headforward proxy [--port 8787]         run the proxy for any app or SDK
+  headforward stats                       real billed tokens and estimated savings
+  headforward eval FOLDER [--tokens-only] replay recorded requests, compare savings and answers
+  headforward show ID [--lines A-B]       print an output that --smart shortened
 
 Claude chat (claude.ai, desktop app):
-  leantokens clip                        compress the clipboard in place, then paste
-  leantokens pack PATH... [--max-tokens N]  bundle files into one compact block for Claude
-  leantokens count FILE                  Claude tokens before and after (exact with ANTHROPIC_API_KEY)
-  leantokens doctor                      check your Claude setup and say what to fix
+  headforward clip                        compress the clipboard in place, then paste
+  headforward pack PATH... [--max-tokens N]  bundle files into one compact block for Claude
+  headforward count FILE                  Claude tokens before and after (exact with ANTHROPIC_API_KEY)
+  headforward doctor                      check your Claude setup and say what to fix
 
 Claude Code habits:
-  leantokens audit [PATH]                find what wastes tokens in a project
-  leantokens tune claude [PATH] --apply  add safe token-saving Claude Code settings
-  leantokens usage [--days N] [--by day|model|project]  Claude Code token use from its local logs
-  leantokens map [PATH...] [--copy]      compact outline of a codebase (classes, functions, lines)
+  headforward audit [PATH]                find what wastes tokens in a project
+  headforward tune claude [PATH] --apply  add safe token-saving Claude Code settings
+  headforward usage [--days N] [--by day|model|project]  Claude Code token use from its local logs
+  headforward map [PATH...] [--copy]      compact outline of a codebase (classes, functions, lines)
 
 Claude Code anywhere, including the desktop app:
-  leantokens hooks install [PROJECT|global]  filter test/install/build output via a Claude Code hook
-  leantokens hooks uninstall [PROJECT|global]
+  headforward hooks install [PROJECT|global]  filter test/install/build output via a Claude Code hook
+  headforward hooks uninstall [PROJECT|global]
 
 Always-on proxy for terminal Claude Code (macOS):
-  leantokens desktop on [PROJECT|global] run the proxy in the background and point Claude Code at it
-  leantokens desktop on global --https    also reach Claude Code in the desktop app (HTTPS_PROXY)
-  leantokens desktop status              is it running, and which settings use it
-  leantokens desktop off                 stop it and undo every settings change
-  leantokens prompt.txt [-l high]        compress a prompt file (- for stdin)
+  headforward desktop on [PROJECT|global] run the proxy in the background and point Claude Code at it
+  headforward desktop on global --https    also reach Claude Code in the desktop app (HTTPS_PROXY)
+  headforward desktop status              is it running, and which settings use it
+  headforward desktop off                 stop it and undo every settings change
+  headforward prompt.txt [-l high]        compress a prompt file (- for stdin)
 
 wrap and proxy options:
   --smart           also reference lines already shown earlier (re-opened files) and
                     shorten outputs over 400 lines; the full text stays readable with
-                    `leantokens show ID --lines A-B`
+                    `headforward show ID --lines A-B`
   --lossy           also shorten runs of near-identical log lines (keeps first and last)
   --cache           Anthropic: add prompt-caching markers when an app doesn't set any
-  --record FOLDER   save original requests (no API keys) for `leantokens eval`
+  --record FOLDER   save original requests (no API keys) for `headforward eval`
 """
+
+
+def _env(name):
+    """HEADFORWARD_<name>, or LEANTOKENS_<name> from before the rename."""
+    return os.environ.get("HEADFORWARD_" + name) or os.environ.get("LEANTOKENS_" + name)
+
+
+def _migrate_home():
+    """Move ~/.leantokens to ~/.headforward, leaving a link so old paths in settings keep working."""
+    if os.path.lexists(HOME_DIR) or not os.path.isdir(OLD_HOME) or os.path.islink(OLD_HOME):
+        return
+    try:
+        os.rename(OLD_HOME, HOME_DIR)
+        os.symlink(HOME_DIR, OLD_HOME)
+    except OSError as e:  # symlinks can need extra rights on Windows: fall back to the old folder
+        if os.path.isdir(HOME_DIR) and not os.path.exists(OLD_HOME):
+            os.rename(HOME_DIR, OLD_HOME)
+        print("headforward: could not move %s to %s (%s); still using the old folder" % (OLD_HOME, HOME_DIR, e),
+              file=sys.stderr)
+        _use_home(OLD_HOME)
+
+
+def _use_home(path):
+    global HOME_DIR, BLOB_DIR, STATS_FILE, CA_DIR, DESKTOP_STATE
+    HOME_DIR = path
+    BLOB_DIR, STATS_FILE = os.path.join(path, "outputs"), os.path.join(path, "stats.jsonl")
+    CA_DIR, DESKTOP_STATE = os.path.join(path, "ca"), os.path.join(path, "desktop.json")
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    _migrate_home()
     if argv and argv[0] in ("-h", "--help", "help"):
         print(USAGE + __doc__)
         return 0
     if argv and argv[0] == "wrap":
-        return cmd_wrap(argv[1:], os.environ.get("LEANTOKENS_UPSTREAM"))
+        return cmd_wrap(argv[1:], _env("UPSTREAM"))
     if argv and argv[0] == "stats":
         return cmd_stats()
     if argv and argv[0] == "eval":
@@ -2682,13 +2745,13 @@ def main(argv=None):
                 "audit": cmd_audit, "tune": cmd_tune, "usage": cmd_usage, "map": cmd_map, "desktop": cmd_desktop, "hooks": cmd_hooks,
                 "hook-bash": cmd_hook_bash, "filter": cmd_filter}[argv[0]](argv[1:])
     if argv and argv[0] == "proxy":
-        ap = argparse.ArgumentParser(prog="leantokens proxy")
+        ap = argparse.ArgumentParser(prog="headforward proxy")
         ap.add_argument("--port", type=int, default=8787)
         ap.add_argument("--upstream", help="send everything to this base URL instead")
         ap.add_argument("--lossy", action="store_true", help="also shorten runs of near-identical log lines")
         ap.add_argument("--smart", action="store_true", help="reference repeated lines, shorten huge outputs")
         ap.add_argument("--cache", action="store_true", help="add Anthropic prompt-caching markers")
-        ap.add_argument("--record", metavar="FOLDER", help="save original requests for `leantokens eval`")
+        ap.add_argument("--record", metavar="FOLDER", help="save original requests for `headforward eval`")
         ap.add_argument("--quiet", action="store_true", help="don't print a line per request")
         ap.add_argument("--https", action="store_true",
                         help="also act as an HTTPS_PROXY, decrypting api.anthropic.com with a local CA")
@@ -2705,10 +2768,10 @@ def main(argv=None):
             srv = start_proxy(a.port, a.upstream, None if a.quiet else log, a.lossy, a.record, a.smart, a.cache,
                               a.https)
         except RuntimeError as e:
-            print("leantokens: %s" % e, file=sys.stderr)
+            print("headforward: %s" % e, file=sys.stderr)
             return 1
         url = "http://127.0.0.1:%d" % srv.server_address[1]
-        print("leantokens proxy on %s\n  Anthropic: ANTHROPIC_BASE_URL=%s\n  OpenAI:    OPENAI_BASE_URL=%s/v1"
+        print("headforward proxy on %s\n  Anthropic: ANTHROPIC_BASE_URL=%s\n  OpenAI:    OPENAI_BASE_URL=%s/v1"
               % (url, url, url), file=sys.stderr, flush=True)
         if a.https:
             print("  HTTPS:     HTTPS_PROXY=%s NODE_EXTRA_CA_CERTS=%s" % (url, _ca_paths()["cert"]),
@@ -2722,7 +2785,7 @@ def main(argv=None):
     if argv and argv[0] == "compress":
         argv = argv[1:]
 
-    ap = argparse.ArgumentParser(prog="leantokens", description="Shrink prompts before sending them to an LLM.")
+    ap = argparse.ArgumentParser(prog="headforward", description="Shrink prompts before sending them to an LLM.")
     ap.add_argument("file", nargs="?", default="-", help="file to compress, or - for stdin")
     ap.add_argument("-l", "--level", default="medium", choices=LEVELS)
     ap.add_argument("-s", "--stats", action="store_true", help="print savings only")

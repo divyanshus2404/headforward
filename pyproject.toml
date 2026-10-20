@@ -3,8 +3,8 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "leantokens"
-version = "0.2.0"
+name = "headforward"
+version = "0.3.0"
 description = "Cut the tokens Claude Code, Codex and LLM apps spend: compresses tool output, JSON and logs through a local proxy."
 readme = "README.md"
 license = { text = "MIT" }
@@ -31,11 +31,12 @@ classifiers = [
 exact = ["tiktoken>=0.5"]
 
 [project.urls]
-Homepage = "https://github.com/divyanshus2404/leantokens"
-Issues = "https://github.com/divyanshus2404/leantokens/issues"
+Homepage = "https://github.com/divyanshus2404/headforward"
+Issues = "https://github.com/divyanshus2404/headforward/issues"
 
 [project.scripts]
-leantokens = "leantokens:main"
+headforward = "headforward:main"
+leantokens = "headforward:main"  # the old name, kept so existing scripts keep working
 
 [tool.setuptools]
-py-modules = ["leantokens"]
+py-modules = ["headforward"]

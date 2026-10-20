@@ -1,4 +1,4 @@
-"""Compare leantokens, rtk and Headroom on the same real command outputs.
+"""Compare headforward, rtk and Headroom on the same real command outputs.
 
 macOS. Needs tiktoken, rtk on PATH, and Headroom installed (`uv tool install
 headroom-ai` or pip). Captures outputs on this machine, so numbers vary:
@@ -15,7 +15,7 @@ TOKEN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _hr = shutil.which("headroom")
 HEADROOM_PY = os.environ.get("HEADROOM_PYTHON") or (open(_hr).readline()[2:].strip() if _hr else sys.executable)
 sys.path.insert(0, TOKEN)
-import leantokens as lt  # noqa: E402
+import headforward as lt  # noqa: E402
 import tiktoken  # noqa: E402
 
 enc = tiktoken.get_encoding("cl100k_base")
@@ -62,12 +62,12 @@ CASES = [
          facts=["test_fail_refund_total", "test_fail_missing_sku", "59.98", "SKU-881"]),
     dict(name="git log --stat (40)", cwd=TOKEN,
          raw="git log -n 40 --stat", rtk="rtk git log -n 40 --stat",
-         facts=["show realistic savings", "chain in front", "leantokens.py"]),
+         facts=["show realistic savings", "chain in front", "headforward.py"]),
     dict(name="grep 'def ' (1 file)", cwd=TOKEN,
-         raw="grep -n 'def ' leantokens.py", rtk="rtk grep -n 'def ' leantokens.py",
+         raw="grep -n 'def ' headforward.py", rtk="rtk grep -n 'def ' headforward.py",
          facts=["def cmd_wrap", "def filter_output", "def desktop_on"]),
     dict(name="grep -rn 'def ' (3 paths)", cwd=TOKEN,
-         raw="grep -rn --include='*.py' 'def ' leantokens.py tests bench", rtk="rtk grep -rn --include='*.py' 'def ' leantokens.py tests bench",
+         raw="grep -rn --include='*.py' 'def ' headforward.py tests bench", rtk="rtk grep -rn --include='*.py' 'def ' headforward.py tests bench",
          facts=["def test_git_log", "def cmd_wrap", "bench_traces.py"]),
     dict(name="ls -la site-packages", cwd=W,
          raw="ls -la " + site, rtk="rtk ls -la " + site,
@@ -97,9 +97,9 @@ for c in CASES:
     rewritten = lt.rewrite_command(c.get("hook_cmd", c["raw"]))
     hook = lt.filter_output(raw) if rewritten else raw
     c["hook_applies"] = bool(rewritten)
-    c["out"]["leantokens hook"] = hook
-    for label, text, lossy in (("leantokens proxy", raw, False), ("leantokens hook+proxy", hook, False),
-                               ("leantokens proxy lossy", raw, True)):
+    c["out"]["headforward hook"] = hook
+    for label, text, lossy in (("headforward proxy", raw, False), ("headforward hook+proxy", hook, False),
+                               ("headforward proxy lossy", raw, True)):
         data = {"model": "claude-sonnet-4-5", "max_tokens": 1024, "messages": msgs(text)}
         lt.compress_request(data, lossy, False)
         out = data["messages"][2]["content"][0]["content"]
@@ -116,7 +116,7 @@ if hr_out is None:
 for c, h in zip(CASES, hr_out or [None] * len(CASES)):
     c["out"]["headroom"] = h if h is not None else c["out"]["raw"]
 
-TOOLS = ["raw", "rtk", "headroom", "leantokens hook", "leantokens proxy", "leantokens hook+proxy", "leantokens proxy lossy"]
+TOOLS = ["raw", "rtk", "headroom", "headforward hook", "headforward proxy", "headforward hook+proxy", "headforward proxy lossy"]
 rows = []
 for c in CASES:
     r = {"case": c["name"], "hook_applies": c["hook_applies"]}
@@ -129,7 +129,7 @@ for c in CASES:
 json.dump(rows, open(os.path.join(HERE, "results.json"), "w"), indent=1)
 
 w = 28
-print("%-*s" % (w, "case") + "".join("%17s" % t.replace("leantokens", "lt").replace("proxy", "px") for t in TOOLS))
+print("%-*s" % (w, "case") + "".join("%17s" % t.replace("headforward", "lt").replace("proxy", "px") for t in TOOLS))
 tot = {t: 0 for t in TOOLS}
 for r in rows:
     cells = []
