@@ -35,7 +35,7 @@ Two independent samples of 200 sessions each (dataset offsets 0 and 5000):
 |---|---|---|---|
 | leantokens | 13.9% / 14.9% smaller | 10.8% / 13.2% smaller | 2.7% / 0.0% |
 | `--smart` | **30.5% / 35.7% smaller** | **21.4% / 27.4% smaller** | **22.4% / 25.6%** |
-| `--smart --lossy` | 30.9% / 35.8% smaller | 21.7% / 27.4% smaller | 23.0% / 25.6% |
+| `--smart --lossy` | 31.2% / 35.9% smaller | 22.1% / 27.6% smaller | 22.7% / 26.0% |
 
 Most of the gain comes from agents re-opening files they have already seen: 65% of tool-output tokens in these sessions are file views, and half of all tool-output lines repeat lines shown earlier. JSON-heavy and log-heavy work (API calls, CI output) saves much more; in a synthetic session of that kind, default mode saved 60%.
 
