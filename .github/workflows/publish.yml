@@ -1,7 +1,7 @@
 # Publishes to PyPI when you publish a GitHub release.
 # Uses PyPI trusted publishing, so no API token is stored in the repo.
 # One-time setup on pypi.org: Account > Publishing > Add a pending publisher
-#   project: leantokens, owner: divyanshus2404, repo: leantokens,
+#   project: headforward, owner: divyanshus2404, repo: headforward,
 #   workflow: publish.yml, environment: pypi
 name: publish
 

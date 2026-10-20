@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Docs · leantokens</title>
+<title>Docs · headforward</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="How to install and use leantokens with Claude Code, Codex, Aider and your own apps.">
+<meta name="description" content="How to install and use headforward with Claude Code, Codex, Aider and your own apps.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="/style.css">
 <link rel="canonical" href="https://leantokens.vercel.app/docs/">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="leantokens">
-<meta property="og:title" content="Docs · leantokens">
-<meta property="og:description" content="Install and use leantokens with Claude Code, Codex, Aider and your own apps.">
+<meta property="og:site_name" content="headforward">
+<meta property="og:title" content="Docs · headforward">
+<meta property="og:description" content="Install and use headforward with Claude Code, Codex, Aider and your own apps.">
 <meta property="og:url" content="https://leantokens.vercel.app/docs/">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#10162a">
@@ -22,7 +22,7 @@
 <script>(function(){try{var m=localStorage.getItem("lt-theme");if(m==="light"||m==="dark")document.documentElement.dataset.theme=m}catch(e){}})();</script>
 </head>
 <body>
-<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#111726"/><rect class="stem" x="16" y="12" width="7" height="40" rx="3.5" fill="#eef1f9"/><rect class="stem" x="34" y="16" width="7" height="36" rx="3.5" fill="#eef1f9"/><rect class="cut" x="27" y="26" width="25" height="6" rx="3" fill="#ff5a4e"/></svg>leantokens</a><div class="links"><a href="/docs/" aria-current="page">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/leantokens">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
+<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#111726"/><rect class="stem" x="16" y="12" width="7" height="40" rx="3.5" fill="#eef1f9"/><rect class="stem" x="34" y="16" width="7" height="36" rx="3.5" fill="#eef1f9"/><rect class="cut" x="27" y="26" width="25" height="6" rx="3" fill="#ff5a4e"/></svg>headforward</a><div class="links"><a href="/docs/" aria-current="page">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/headforward">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
 
 <div class="in docs">
   <nav class="toc" aria-label="On this page">
@@ -47,31 +47,31 @@
   </nav>
 
   <article class="doc">
-    <h1>leantokens documentation</h1>
-    <p>leantokens shrinks the tool output a coding agent reads (test runs, build logs, git output, JSON, file reads) before it reaches the model, so every turn costs fewer input tokens. It runs as a Claude Code hook, a local proxy, or both. Error lines are always kept, anything shortened can be read back, and your own messages are never changed.</p>
+    <h1>headforward documentation</h1>
+    <p>headforward shrinks the tool output a coding agent reads (test runs, build logs, git output, JSON, file reads) before it reaches the model, so every turn costs fewer input tokens. It runs as a Claude Code hook, a local proxy, or both. Error lines are always kept, anything shortened can be read back, and your own messages are never changed.</p>
 
     <h2 id="install">Install</h2>
     <p>Requires Python 3.9 or newer on macOS, Linux or Windows. There are no other dependencies.</p>
-    <pre>pip install leantokens</pre>
+    <pre>pip install headforward</pre>
     <p>Optional, for exact token counts instead of estimates:</p>
-    <pre>pip install "leantokens[exact]"</pre>
-    <p class="callout">No pip? leantokens is one file. Save <a href="/leantokens.py">leantokens.py</a> and run <code>python3 leantokens.py</code> wherever these docs say <code>leantokens</code>.</p>
+    <pre>pip install "headforward[exact]"</pre>
+    <p class="callout">No pip? headforward is one file. Save <a href="/headforward.py">headforward.py</a> and run <code>python3 headforward.py</code> wherever these docs say <code>headforward</code>.</p>
 
     <h2 id="quickstart">Quick start</h2>
     <ol>
       <li>Turn on the hook for every Claude Code session, desktop app included:
-        <pre>leantokens hooks install global</pre></li>
+        <pre>headforward hooks install global</pre></li>
       <li>Check your setup. It prints the fix for anything wrong:
-        <pre>leantokens doctor</pre></li>
-      <li>Start a new Claude Code session and work as usual. When a noisy command is shortened, its output ends with a line like <code>[40 passing test lines omitted; full output: leantokens show ID]</code>.</li>
+        <pre>headforward doctor</pre></li>
+      <li>Start a new Claude Code session and work as usual. When a noisy command is shortened, its output ends with a line like <code>[40 passing test lines omitted; full output: headforward show ID]</code>.</li>
       <li>See running totals any time:
-        <pre>leantokens stats</pre></li>
+        <pre>headforward stats</pre></li>
     </ol>
 
     <h2 id="hooks">Hooks (desktop app too)</h2>
     <p>A Claude Code <code>PreToolUse</code> hook pipes noisy commands through the filter. It runs inside every session, including Claude Code in the desktop app, which proxies can't reach.</p>
-    <pre>leantokens hooks install global          # or one project: leantokens hooks install ~/code/my-app
-leantokens hooks uninstall global</pre>
+    <pre>headforward hooks install global          # or one project: headforward hooks install ~/code/my-app
+headforward hooks uninstall global</pre>
     <div class="tbl"><table>
       <tr><th>Commands</th><th>What happens</th></tr>
       <tr><td>Tests: <code>pytest</code>, <code>npm test</code>, <code>go test</code>, <code>cargo test</code> and similar</td><td>Passing-test lines collapse to a count. Failures, tracebacks and the summary are kept.</td></tr>
@@ -81,29 +81,29 @@ leantokens hooks uninstall global</pre>
       <tr><td><code>grep</code>, <code>rg</code></td><td>Matches grouped under their file.</td></tr>
       <tr><td><code>log show</code> and timestamped logs</td><td>Near-identical lines counted on the first one.</td></tr>
     </table></div>
-    <p>Every other command is left alone. Error-like lines are always kept, the command's exit code is preserved, and the full output is saved: <code>leantokens show ID</code> prints it, and <code>--lines A-B</code> prints part of it.</p>
+    <p>Every other command is left alone. Error-like lines are always kept, the command's exit code is preserved, and the full output is saved: <code>headforward show ID</code> prints it, and <code>--lines A-B</code> prints part of it.</p>
 
     <h2 id="always-on">Always-on proxy (macOS)</h2>
     <p>Runs the proxy at login and points Claude Code's settings at it, so every terminal session is compressed without typing <code>wrap</code>.</p>
-    <pre>leantokens desktop on global      # or one project: leantokens desktop on ~/code/my-app
-leantokens desktop status         # running? which settings use it? where does it forward?
-leantokens desktop off            # stop it and undo every settings change</pre>
-    <p>Settings change only after the proxy is confirmed running, and a backup is kept. If your settings already point <code>ANTHROPIC_BASE_URL</code> at another gateway (a router, cost tracker or company proxy), leantokens goes in front of it: Claude Code → leantokens → your gateway → Anthropic. <code>desktop off</code> puts your URL back.</p>
-    <p class="callout">Claude Code in the desktop app ignores <code>ANTHROPIC_BASE_URL</code>, so use hooks there. An <code>ANTHROPIC_BASE_URL</code> exported in your shell overrides Claude Code settings and skips the proxy; <code>leantokens doctor</code> warns about it.</p>
+    <pre>headforward desktop on global      # or one project: headforward desktop on ~/code/my-app
+headforward desktop status         # running? which settings use it? where does it forward?
+headforward desktop off            # stop it and undo every settings change</pre>
+    <p>Settings change only after the proxy is confirmed running, and a backup is kept. If your settings already point <code>ANTHROPIC_BASE_URL</code> at another gateway (a router, cost tracker or company proxy), headforward goes in front of it: Claude Code → headforward → your gateway → Anthropic. <code>desktop off</code> puts your URL back.</p>
+    <p class="callout">Claude Code in the desktop app ignores <code>ANTHROPIC_BASE_URL</code>, so use hooks there. An <code>ANTHROPIC_BASE_URL</code> exported in your shell overrides Claude Code settings and skips the proxy; <code>headforward doctor</code> warns about it.</p>
 
     <h2 id="agents">Coding agents</h2>
     <p><code>wrap</code> starts a private proxy on a random local port, launches the agent pointed at it, and shuts the proxy down when the agent exits.</p>
     <div class="tbl"><table>
       <tr><th>Agent</th><th>Command</th><th>Notes</th></tr>
-      <tr><td>Claude Code</td><td><code>leantokens wrap claude</code></td><td>Sign in to Claude Code once with <code>/login</code>, or set <code>ANTHROPIC_API_KEY</code>.</td></tr>
-      <tr><td>OpenAI Codex CLI</td><td><code>leantokens wrap codex</code></td><td>Use an API key login. A ChatGPT-account login talks to ChatGPT's servers and bypasses the proxy.</td></tr>
-      <tr><td>Aider</td><td><code>leantokens wrap aider</code></td><td>Works with OpenAI and Anthropic models.</td></tr>
+      <tr><td>Claude Code</td><td><code>headforward wrap claude</code></td><td>Sign in to Claude Code once with <code>/login</code>, or set <code>ANTHROPIC_API_KEY</code>.</td></tr>
+      <tr><td>OpenAI Codex CLI</td><td><code>headforward wrap codex</code></td><td>Use an API key login. A ChatGPT-account login talks to ChatGPT's servers and bypasses the proxy.</td></tr>
+      <tr><td>Aider</td><td><code>headforward wrap aider</code></td><td>Works with OpenAI and Anthropic models.</td></tr>
     </table></div>
-    <p>Anything after the agent name is passed to the agent, for example <code>leantokens wrap claude --continue</code>.</p>
+    <p>Anything after the agent name is passed to the agent, for example <code>headforward wrap claude --continue</code>.</p>
 
     <h2 id="proxy">Proxy for your own app</h2>
     <p>Run the proxy, then point your SDK at it with its base URL setting.</p>
-    <pre>leantokens proxy --port 8787
+    <pre>headforward proxy --port 8787
 
 # in your app's environment
 export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
@@ -114,10 +114,10 @@ export OPENAI_BASE_URL=http://127.0.0.1:8787/v1</pre>
     <h2 id="prompts">Prompt compression</h2>
     <p>For text you paste into a chat app. It removes filler, greetings, sign-offs, wordy phrases and repeated sentences. Code is never rewritten.</p>
     <pre># macOS: compress your clipboard and put it back
-pbpaste | leantokens - -l high | pbcopy
+pbpaste | headforward - -l high | pbcopy
 
 # a file
-leantokens prompt.txt -l high</pre>
+headforward prompt.txt -l high</pre>
     <div class="tbl"><table>
       <tr><th>Level</th><th>What it removes</th></tr>
       <tr><td><code>light</code></td><td>Extra spaces and blank lines.</td></tr>
@@ -125,20 +125,20 @@ leantokens prompt.txt -l high</pre>
       <tr><td><code>high</code></td><td>Plus articles, hedges such as "I think", bold markers; JSON code blocks are minified.</td></tr>
       <tr><td><code>max</code></td><td>Plus comment-only lines and blank lines inside code blocks.</td></tr>
     </table></div>
-    <p>To apply the tool-output rules to a file instead, use <code>--tool</code>: <code>leantokens api.json --tool</code>.</p>
+    <p>To apply the tool-output rules to a file instead, use <code>--tool</code>: <code>headforward api.json --tool</code>.</p>
 
     <h2 id="stats">Savings and billing</h2>
-    <p>The proxy reads the usage numbers the provider returns with every response: input tokens, cache reads and output tokens. <code>leantokens stats</code> shows those billed totals for the last 24 hours and all time, plus tokens saved. Savings are converted from characters removed at the token rate you were actually billed for those requests.</p>
-    <pre>$ leantokens stats
+    <p>The proxy reads the usage numbers the provider returns with every response: input tokens, cache reads and output tokens. <code>headforward stats</code> shows those billed totals for the last 24 hours and all time, plus tokens saved. Savings are converted from characters removed at the token rate you were actually billed for those requests.</p>
+    <pre>$ headforward stats
 Last 24 hours     212 requests  1,830,114 input tokens billed, ~402,770 saved (18% less input), cache hits 91%, 48,210 output</pre>
     <p class="callout">The numbers above are an illustration of the format, not a measurement.</p>
-    <p>Stats are stored locally in <code>~/.leantokens/stats.jsonl</code>.</p>
+    <p>Stats are stored locally in <code>~/.headforward/stats.jsonl</code>.</p>
 
     <h2 id="eval">Check answers don't change</h2>
     <p>Record real requests while you work, then replay each one to the model with and without compression and compare what comes back.</p>
-    <pre>leantokens wrap --record ~/lt-rec claude   # work as usual
-leantokens eval ~/lt-rec --tokens-only     # exact token savings only
-leantokens eval ~/lt-rec                   # also compare the model's answers</pre>
+    <pre>headforward wrap --record ~/lt-rec claude   # work as usual
+headforward eval ~/lt-rec --tokens-only     # exact token savings only
+headforward eval ~/lt-rec                   # also compare the model's answers</pre>
     <ul>
       <li><code>--tokens-only</code> uses Anthropic's free token-counting endpoint, so it costs nothing on Anthropic recordings.</li>
       <li>A full run makes two model calls per recording, capped at <code>--max-tokens</code> (default 1024) each.</li>
@@ -148,15 +148,15 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
     </ul>
 
     <h2 id="how">How compression works</h2>
-    <p>leantokens only rewrites <strong>tool results</strong>. System prompts and your messages reach the model unchanged.</p>
+    <p>headforward only rewrites <strong>tool results</strong>. System prompts and your messages reach the model unchanged.</p>
     <div class="tbl"><table>
       <tr><th>Input</th><th>What happens</th><th>Lossless?</th></tr>
       <tr><td>JSON lists of same-shaped objects</td><td>Keys are written once and values as rows. A column with one value in every row is stated once.</td><td>Yes. The original can be rebuilt exactly.</td></tr>
       <tr><td>A tool result identical to an earlier one</td><td>Replaced by <code>[Same output as tool call X above.]</code></td><td>Yes. The earlier copy is still in context.</td></tr>
       <tr><td>Logs and command output</td><td>Repeated lines collapse to one line with a count. Terminal color codes and trailing spaces are removed.</td><td>Yes, apart from color codes.</td></tr>
       <tr><td>File reads</td><td>Line-number padding is trimmed.</td><td>Yes.</td></tr>
-      <tr><td>Routine command output (hooks, <code>--smart</code>)</td><td>Runs of 3+ installs, progress bars, passing tests or build steps collapse to a count.</td><td>Recoverable with <code>leantokens show ID</code>.</td></tr>
-      <tr><td>Git log, <code>ls -l</code>, grep, timestamped logs (hooks, <code>--lossy</code>)</td><td>Repeated and derivable parts removed; every distinct line kept.</td><td>Recoverable with <code>leantokens show ID</code>.</td></tr>
+      <tr><td>Routine command output (hooks, <code>--smart</code>)</td><td>Runs of 3+ installs, progress bars, passing tests or build steps collapse to a count.</td><td>Recoverable with <code>headforward show ID</code>.</td></tr>
+      <tr><td>Git log, <code>ls -l</code>, grep, timestamped logs (hooks, <code>--lossy</code>)</td><td>Repeated and derivable parts removed; every distinct line kept.</td><td>Recoverable with <code>headforward show ID</code>.</td></tr>
       <tr><td>Runs of near-identical log lines (<code>--lossy</code> only)</td><td>First and last lines kept, the middle replaced by a count.</td><td>No.</td></tr>
     </table></div>
     <p>Here is a JSON result before and after:</p>
@@ -166,20 +166,20 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
 
 {"_cols":["id","total"],"_rows":[[1,19.99],[2,24.5],[3,8.0]],"_same":{"status":"shipped"}}</pre>
     <h3>Prompt caching</h3>
-    <p>Anthropic and OpenAI bill repeated prompt prefixes at a fraction of the normal rate. leantokens is deterministic and never rewrites earlier turns, so each request still starts with exactly the bytes of the previous one and cache hits keep landing.</p>
+    <p>Anthropic and OpenAI bill repeated prompt prefixes at a fraction of the normal rate. headforward is deterministic and never rewrites earlier turns, so each request still starts with exactly the bytes of the previous one and cache hits keep landing.</p>
 
     <h2 id="cli">CLI reference</h2>
     <div class="tbl"><table>
       <tr><th>Command</th><th>Options</th></tr>
-      <tr><td><code>leantokens wrap AGENT [args]</code></td><td><code>--lossy</code>, <code>--record FOLDER</code></td></tr>
-      <tr><td><code>leantokens proxy</code></td><td><code>--port N</code> (default 8787), <code>--upstream URL</code>, <code>--lossy</code>, <code>--record FOLDER</code></td></tr>
-      <tr><td><code>leantokens hooks install|uninstall [PROJECT|global]</code></td><td>none</td></tr>
-      <tr><td><code>leantokens desktop on|off|status [PROJECT|global]</code></td><td><code>--smart</code></td></tr>
-      <tr><td><code>leantokens doctor</code></td><td>none</td></tr>
-      <tr><td><code>leantokens show ID</code></td><td><code>--lines A-B</code></td></tr>
-      <tr><td><code>leantokens stats</code></td><td>none</td></tr>
-      <tr><td><code>leantokens eval FOLDER</code></td><td><code>--tokens-only</code>, <code>--limit N</code> (default 50), <code>--lossy</code>, <code>--max-tokens N</code></td></tr>
-      <tr><td><code>leantokens FILE</code> (or <code>-</code> for stdin)</td><td><code>-l, --level</code> light | medium | high | max; <code>-t, --tool</code>; <code>--lossy</code>; <code>-s, --stats</code>; <code>-q, --quiet</code>; <code>--model NAME</code></td></tr>
+      <tr><td><code>headforward wrap AGENT [args]</code></td><td><code>--lossy</code>, <code>--record FOLDER</code></td></tr>
+      <tr><td><code>headforward proxy</code></td><td><code>--port N</code> (default 8787), <code>--upstream URL</code>, <code>--lossy</code>, <code>--record FOLDER</code></td></tr>
+      <tr><td><code>headforward hooks install|uninstall [PROJECT|global]</code></td><td>none</td></tr>
+      <tr><td><code>headforward desktop on|off|status [PROJECT|global]</code></td><td><code>--smart</code></td></tr>
+      <tr><td><code>headforward doctor</code></td><td>none</td></tr>
+      <tr><td><code>headforward show ID</code></td><td><code>--lines A-B</code></td></tr>
+      <tr><td><code>headforward stats</code></td><td>none</td></tr>
+      <tr><td><code>headforward eval FOLDER</code></td><td><code>--tokens-only</code>, <code>--limit N</code> (default 50), <code>--lossy</code>, <code>--max-tokens N</code></td></tr>
+      <tr><td><code>headforward FILE</code> (or <code>-</code> for stdin)</td><td><code>-l, --level</code> light | medium | high | max; <code>-t, --tool</code>; <code>--lossy</code>; <code>-s, --stats</code>; <code>-q, --quiet</code>; <code>--model NAME</code></td></tr>
     </table></div>
     <div class="tbl"><table>
       <tr><th>Option</th><th>Meaning</th></tr>
@@ -190,7 +190,7 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
       <tr><td><code>-q, --quiet</code></td><td>Don't print the savings line to stderr.</td></tr>
       <tr><td><code>--model NAME</code></td><td>Which tiktoken encoding to count with (default <code>gpt-4o</code>).</td></tr>
     </table></div>
-    <p>Environment variables: <code>LEANTOKENS_LOSSY=1</code> turns on lossy mode for <code>wrap</code>; <code>LEANTOKENS_UPSTREAM</code> sets the upstream for <code>wrap</code>.</p>
+    <p>Environment variables: <code>HEADFORWARD_LOSSY=1</code> turns on lossy mode for <code>wrap</code>; <code>HEADFORWARD_UPSTREAM</code> sets the upstream for <code>wrap</code>.</p>
 
     <h2 id="privacy">Privacy and safety</h2>
     <ul>
@@ -211,17 +211,17 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
 
     <h2 id="troubleshooting">Troubleshooting</h2>
     <h3>Claude Code says "Not logged in"</h3>
-    <p>The terminal version of Claude Code has its own sign-in, separate from the desktop app. Type <code>/login</code> inside Claude Code once. leantokens passes your sign-in through unchanged.</p>
-    <h3><code>leantokens: command not found</code></h3>
-    <p>The folder pip installs scripts into isn't on your PATH. Run <code>python3 -m pip show -f leantokens</code> to find it, or run the single file with <code>python3 leantokens.py</code>.</p>
+    <p>The terminal version of Claude Code has its own sign-in, separate from the desktop app. Type <code>/login</code> inside Claude Code once. headforward passes your sign-in through unchanged.</p>
+    <h3><code>headforward: command not found</code></h3>
+    <p>The folder pip installs scripts into isn't on your PATH. Run <code>python3 -m pip show -f headforward</code> to find it, or run the single file with <code>python3 headforward.py</code>.</p>
     <h3>No savings were recorded</h3>
-    <p>Hooks and settings apply to new sessions only, so start a new Claude Code session. Then run something noisy, like your tests, and look for a <code>leantokens show ID</code> line in the output. For the proxy, run <code>leantokens doctor</code>: a shell <code>ANTHROPIC_BASE_URL</code> overrides Claude Code settings and skips it. Codex with a ChatGPT login and browser apps never reach the proxy.</p>
+    <p>Hooks and settings apply to new sessions only, so start a new Claude Code session. Then run something noisy, like your tests, and look for a <code>headforward show ID</code> line in the output. For the proxy, run <code>headforward doctor</code>: a shell <code>ANTHROPIC_BASE_URL</code> overrides Claude Code settings and skips it. Codex with a ChatGPT login and browser apps never reach the proxy.</p>
     <h3>A command with <code>!</code> hangs at <code>dquote&gt;</code></h3>
-    <p>In zsh, <code>!</code> inside double quotes is history expansion. Press Ctrl-C, then use single quotes: <code>echo 'Hello!' | leantokens -</code>.</p>
+    <p>In zsh, <code>!</code> inside double quotes is history expansion. Press Ctrl-C, then use single quotes: <code>echo 'Hello!' | headforward -</code>.</p>
   </article>
 </div>
 
-<footer class="site-foot"><div class="in"><span>leantokens · MIT license</span><a href="/">Home</a><a href="https://github.com/divyanshus2404/leantokens">Source on GitHub</a></div></footer>
+<footer class="site-foot"><div class="in"><span>headforward · MIT license</span><a href="/">Home</a><a href="https://github.com/divyanshus2404/headforward">Source on GitHub</a></div></footer>
 <script>
 (function () {
   var order = ["auto", "light", "dark"], labels = { auto: "Auto", light: "Light", dark: "Dark" };

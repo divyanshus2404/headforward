@@ -1,4 +1,4 @@
-"""Benchmark leantokens on real coding-agent sessions.
+"""Benchmark headforward on real coding-agent sessions.
 
 Uses public SWE-agent trajectories (nebius/SWE-agent-trajectories on Hugging Face):
 real sessions where an agent fixes GitHub issues by reading files, searching,
@@ -22,7 +22,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import leantokens as lt  # noqa: E402
+import headforward as lt  # noqa: E402
 
 API = ("https://datasets-server.huggingface.co/rows?dataset=nebius/SWE-agent-trajectories"
        "&config=default&split=train&offset=%d&length=%d")
@@ -78,8 +78,8 @@ def main():
     tok = lambda b: len(enc.encode(json.dumps(b, ensure_ascii=False), disallowed_special=()))
 
     sessions = [s for s in fetch(a.sessions, a.offset) if s]
-    lt.BLOB_DIR = tempfile.mkdtemp()  # don't fill ~/.leantokens while benchmarking
-    modes = {"original": None, "leantokens": (False, False), "--lossy": (True, False),
+    lt.BLOB_DIR = tempfile.mkdtemp()  # don't fill ~/.headforward while benchmarking
+    modes = {"original": None, "headforward": (False, False), "--lossy": (True, False),
              "--smart": (False, True), "--smart --lossy": (True, True)}
     final = {m: 0 for m in modes}
     total = {m: 0 for m in modes}
