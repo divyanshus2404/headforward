@@ -41,6 +41,24 @@ Most of the gain comes from agents re-opening files they have already seen: 65% 
 
 `--smart` keeps every line the model saw available in context or on disk, but it changes how the agent sees repeated content. Until you have run `leantokens eval` on your own work, treat it as something to measure, not a guaranteed same-result setting.
 
+### Compared with rtk and Headroom
+
+The same 7 real command outputs from one Mac, run through each tool (rtk 0.43.0 command wrappers, Headroom 0.41.0 default `compress()`, leantokens hook plus proxy). "Facts" are strings each output must still contain: failing test names and assertion values, error lines, list items. Reproduce with `python3 bench/compare_tools.py`; captured outputs differ per machine.
+
+| Output | Raw | rtk | Headroom | leantokens |
+|---|---|---|---|---|
+| Unit tests, 2 failures | 1,899 | 67, failures hidden | 1,899 | 293 |
+| `git log --stat`, 40 commits | 4,869 | 1,271 | 4,869 | 3,800 |
+| `grep`, 1 file | 963 | 258, matches cut | 963 | 963 |
+| `grep` across 3 paths | 4,921 | 1,741 | 3,150 | 3,385 |
+| `ls -la`, large folder | 10,445 | 3,077 | 10,445 | 7,264 |
+| System log, 600 lines | 37,040 | 614, error cut | 36,279 | 21,070 |
+| JSON, 25 items | 2,635 | 93, 1 of 25 shown | 1,592 | 1,388 |
+| **Tokens saved** | | **89%** | **6%** | **39%** |
+| **Facts kept** | | 9 of 19 | 19 of 19 | 19 of 19 |
+
+rtk summarizes hardest and saves its full output to a file the agent can read later. Headroom's proxy has more options than the default `compress()` tested here.
+
 ## Check it on your own work
 
 `leantokens stats` reports what the provider actually billed (input, cache hits, output) and the tokens saved, converted at your real billed rate.
@@ -129,7 +147,7 @@ leantokens hooks install ~/code/my-app   # or: leantokens hooks install global
 leantokens hooks uninstall ~/code/my-app
 ```
 
-A `PreToolUse` hook rewrites test, install and build commands (`npm test`, `pytest`, `pip install`, `cargo build`, `make` and similar) so their output is filtered: colour codes and progress redraws are removed, runs of routine lines collapse to a count, and error lines are always kept. The command's exit code is preserved, anything removed is saved for `leantokens show ID`, and every other command is left alone. Tested in a real desktop Code session: the test run worked, the exit code came through, and the output shrank by 12%. Savings are larger on install and build output.
+A `PreToolUse` hook rewrites test, install and build commands (`npm test`, `pytest`, `pip install`, `cargo build`, `make` and similar) plus `git log`, `ls -l`, `grep`, `rg` and `log show`, so their output is filtered: colour codes and progress redraws are removed, runs of routine lines collapse to a count, and error lines are always kept. Git logs, long listings, multi-file grep results and timestamped logs are also compacted: full hashes shortened, a single author or owner stated once, stat bar graphs dropped, grep matches grouped under their file, and near-identical log lines counted on the first one. Every distinct line is kept. The command's exit code is preserved, anything removed is saved for `leantokens show ID`, and every other command is left alone. Tested in a real desktop Code session: the test run worked, the exit code came through, and the output shrank by 12%. Savings are larger on install and build output.
 
 ### Always-on proxy for terminal Claude Code (macOS)
 
@@ -141,7 +159,7 @@ leantokens desktop status             # running? which settings use it?
 leantokens desktop off                # stop it and undo every settings change
 ```
 
-The proxy runs as a login item (launchd), restarts within about 2 seconds if it stops, and answers a health check at `http://127.0.0.1:8787/leantokens/health`. `on` edits settings only after the proxy is confirmed running, never replaces an `ANTHROPIC_BASE_URL` you set yourself, and keeps a backup.
+The proxy runs as a login item (launchd), restarts within about 2 seconds if it stops, and answers a health check at `http://127.0.0.1:8787/leantokens/health`. `on` edits settings only after the proxy is confirmed running and keeps a backup. If your settings already point `ANTHROPIC_BASE_URL` at another gateway (a router, cost tracker or company proxy), leantokens goes in front of it: requests flow Claude Code → leantokens → your gateway, and `off` puts your URL back.
 
 **Not for the Claude desktop app.** Tested: Code sessions in the desktop app set their own connection to Anthropic and ignore `ANTHROPIC_BASE_URL` in settings, so their requests never reach the proxy. This works for Claude Code started in a terminal.
 
@@ -170,6 +188,7 @@ Install `tiktoken` for exact token counts: `pip install "leantokens[exact]"`.
 ## Limits
 
 - Only tool output is compressed when proxying.
+- An `ANTHROPIC_BASE_URL` exported in your shell overrides Claude Code settings, so it bypasses the always-on proxy. `leantokens doctor` warns about this.
 - Codex signed in with a ChatGPT account talks to ChatGPT's servers, so it bypasses the proxy. Use an API key login.
 - Browser chat apps (claude.ai, chatgpt.com) can't be proxied. Use the prompt compressor.
 

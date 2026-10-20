@@ -344,6 +344,30 @@ leantokens desktop off</div>
       </div>
     </section>
 
+    <section id="compare">
+      <div class="head">
+        <span class="eyebrow">Compared</span>
+        <h2>Fewer tokens, without hiding the failure.</h2>
+        <p class="lede">The same 7 real command outputs from one Mac, run through each tool. A check mark means every key fact we looked for (failing test names, error lines, list items) was still there.</p>
+      </div>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead><tr><th scope="col">Output</th><th scope="col">Raw tokens</th><th scope="col">rtk</th><th scope="col">Headroom</th><th scope="col">leantokens</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Unit tests, 2 failures</th><td>1,899</td><td><span class="no">67 &middot; failures hidden</span></td><td><span class="yes">1,899 &#10003;</span></td><td><span class="yes">293 &#10003;</span></td></tr>
+            <tr><th scope="row">git log --stat, 40 commits</th><td>4,869</td><td><span class="yes">1,271 &#10003;</span></td><td><span class="yes">4,869 &#10003;</span></td><td><span class="yes">3,800 &#10003;</span></td></tr>
+            <tr><th scope="row">grep, 1 file</th><td>963</td><td><span class="no">258 &middot; matches cut</span></td><td><span class="yes">963 &#10003;</span></td><td><span class="yes">963 &#10003;</span></td></tr>
+            <tr><th scope="row">grep across 3 paths</th><td>4,921</td><td><span class="yes">1,741 &#10003;</span></td><td><span class="yes">3,150 &#10003;</span></td><td><span class="yes">3,385 &#10003;</span></td></tr>
+            <tr><th scope="row">ls -la, large folder</th><td>10,445</td><td><span class="yes">3,077 &#10003;</span></td><td><span class="yes">10,445 &#10003;</span></td><td><span class="yes">7,264 &#10003;</span></td></tr>
+            <tr><th scope="row">System log, 600 lines</th><td>37,040</td><td><span class="no">614 &middot; error cut</span></td><td><span class="yes">36,279 &#10003;</span></td><td><span class="yes">21,070 &#10003;</span></td></tr>
+            <tr><th scope="row">JSON, 25 items</th><td>2,635</td><td><span class="no">93 &middot; 1 of 25 shown</span></td><td><span class="yes">1,592 &#10003;</span></td><td><span class="yes">1,388 &#10003;</span></td></tr>
+            <tr><th scope="row">Total saved</th><td>62,772</td><td><b>89%</b> &middot; 9 of 19 facts</td><td><b>6%</b> &middot; 19 of 19</td><td><b>39%</b> &middot; 19 of 19</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">rtk 0.43.0 command wrappers, Headroom 0.41.0 default <code>compress()</code>, leantokens hook plus proxy. rtk saves its full output to a file the agent can read later. Counted with tiktoken; reproduce with <code>python3 bench/compare_tools.py</code>.</p>
+    </section>
+
     <section id="try">
       <div class="head">
         <span class="eyebrow">Try it</span>
