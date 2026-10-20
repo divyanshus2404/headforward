@@ -5,9 +5,14 @@ import json
 import os
 import random
 import re
+import shutil
+import socket
+import ssl
+import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import redirect_stdout
 
@@ -607,6 +612,11 @@ class UsageTests(unittest.TestCase):
         raw = json.dumps({"usage": {"prompt_tokens": 70, "completion_tokens": 5}}).encode()
         self.assertEqual(lt.parse_usage(raw, "openai"), {"in": 70, "cached": 0, "out": 5})
 
+    def test_summary_counts_requests_not_hooks(self):
+        s = lt.summarize([{"t": 0, "p": "hook", "b": 900, "a": 100},
+                          {"t": 0, "p": "anthropic", "b": 0, "a": 0, "req": 80, "in": 20, "cached": 0, "out": 5}])
+        self.assertEqual((s["requests"], s["in"], s["saved"]), (1, 20, 200))
+
     def test_summary_uses_billed_rate(self):
         s = lt.summarize([{"t": 0, "p": "anthropic", "b": 4000, "a": 1000, "req": 6000,
                            "in": 1500, "cached": 1000, "out": 10}])
@@ -710,6 +720,14 @@ class ProxyTests(unittest.TestCase):
         self.assertFalse(any("secret-test-key" in t for t in texts))
         self.assertTrue(any('"tool_use_id": "t1"' in t for t in texts))
 
+    def test_request_without_tool_results_recorded(self):
+        self.post(json.dumps({"model": "m", "max_tokens": 10, "messages": [{"role": "user", "content": "hi"}]}))
+        deadline = time.time() + 2  # the proxy logs after the stream ends, on its own thread
+        while not any(r["b"] == 0 for r in self.rows) and time.time() < deadline:
+            time.sleep(0.01)
+        row = next(r for r in self.rows if r["b"] == 0)
+        self.assertEqual((row["a"], row["in"]), (0, 1000))
+
     def test_openai_tool_messages(self):
         req = {"messages": [{"role": "tool", "tool_call_id": "c1", "content": LOGS}],
                "input": [{"type": "function_call_output", "call_id": "c2", "output": LOGS}]}
@@ -770,6 +788,152 @@ r = c.getresponse()
 r.read()
 sys.exit(0 if r.status == 200 else 3)
 '''
+
+
+@unittest.skipUnless(shutil.which("openssl"), "HTTPS mode makes its certificate with openssl")
+class HttpsProxyTests(unittest.TestCase):
+    """HTTPS_PROXY mode: decrypt CONNECTs to INTERCEPT hosts, tunnel everything else blind."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.up = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeAPI)
+        threading.Thread(target=cls.up.serve_forever, daemon=True).start()
+        cls.upstream = "http://127.0.0.1:%d" % cls.up.server_address[1]
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.saved = (lt.CA_DIR, lt.INTERCEPT, lt.STATS_FILE)
+        lt.CA_DIR = os.path.join(cls.tmp.name, "ca")
+        lt.INTERCEPT = {"localhost": cls.upstream}  # the fake API stands in for api.anthropic.com
+        lt.STATS_FILE = os.path.join(cls.tmp.name, "stats.jsonl")
+        cls.rows = []
+        cls.px = lt.start_proxy(upstream=cls.upstream, log=cls.rows.append, https=True)
+        cls.port = cls.px.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.px.shutdown()
+        cls.up.shutdown()
+        lt.CA_DIR, lt.INTERCEPT, lt.STATS_FILE = cls.saved
+        cls.tmp.cleanup()
+
+    def wait_for_row(self, n):
+        deadline = time.time() + 2  # the proxy logs after the stream ends, on its own thread
+        while len(self.rows) < n and time.time() < deadline:
+            time.sleep(0.01)
+
+    def test_ca_key_is_private_and_constrained(self):
+        p = lt._ca_paths()
+        if os.name != "nt":  # Windows doesn't report Unix permission bits
+            self.assertEqual(os.stat(p["key"]).st_mode & 0o077, 0)
+            self.assertEqual(os.stat(lt.CA_DIR).st_mode & 0o077, 0)
+        out = subprocess.run(["openssl", "x509", "-in", p["cert"], "-noout", "-ext", "nameConstraints"],
+                             capture_output=True, text=True).stdout
+        self.assertIn("DNS:localhost", out)
+
+    def test_intercepted_request_is_compressed_and_counted(self):
+        ctx = ssl.create_default_context(cafile=lt._ca_paths()["cert"])
+        c = http.client.HTTPSConnection("127.0.0.1", self.port, context=ctx, timeout=10)
+        c.set_tunnel("localhost", 443)
+        n = len(self.rows)
+        body = {"model": "m", "max_tokens": 100, "messages": [{"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "t1", "content": json.dumps(ROWS, indent=2)}]}]}
+        for _ in range(2):  # two requests on one kept-alive TLS connection
+            c.request("POST", "/v1/messages?beta=true", json.dumps(body), {"Content-Type": "application/json"})
+            r = c.getresponse()
+            self.assertEqual(r.status, 200)
+            self.assertIn("chunk2", r.read().decode())
+        c.close()
+        self.assertIn("_cols", FakeAPI.got["body"]["messages"][0]["content"][0]["content"])
+        self.wait_for_row(n + 2)
+        self.assertEqual([r["p"] for r in self.rows[n:]], ["anthropic", "anthropic"])
+        self.assertLess(self.rows[-1]["a"], self.rows[-1]["b"])
+
+    def test_untrusted_client_is_refused_not_served(self):
+        c = http.client.HTTPSConnection("127.0.0.1", self.port, context=ssl.create_default_context(), timeout=10)
+        c.set_tunnel("localhost", 443)
+        with self.assertRaises(ssl.SSLError):
+            c.request("GET", "/")
+
+    def test_other_hosts_are_tunneled_untouched(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        c.set_tunnel("127.0.0.1", self.up.server_address[1])
+        n = len(self.rows)
+        raw = json.dumps({"messages": [{"role": "tool", "tool_call_id": "c1", "content": LOGS}]})
+        c.request("POST", "/v1/chat/completions", raw, {"Content-Type": "application/json"})
+        self.assertEqual(c.getresponse().status, 200)
+        c.close()
+        self.assertEqual(FakeAPI.got["body"]["messages"][0]["content"], LOGS)  # not compressed
+        time.sleep(0.1)
+        self.assertEqual(len(self.rows), n)
+
+    def test_absolute_form_to_self_is_a_normal_request(self):
+        s = socket.create_connection(("127.0.0.1", self.port), timeout=10)
+        s.sendall(b"GET http://127.0.0.1:%d/leantokens/health HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n"
+                  % self.port)
+        reply = b""
+        while True:
+            d = s.recv(4096)
+            if not d:
+                break
+            reply += d
+        s.close()
+        self.assertIn(b'"ok": true', reply)
+
+    def test_telemetry_is_not_counted(self):
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        n = len(self.rows)
+        c.request("POST", "/api/event_logging/batch", json.dumps({"events": [1]}),
+                  {"Content-Type": "application/json", "anthropic-version": "2023-06-01"})
+        c.getresponse().read()
+        c.close()
+        time.sleep(0.1)
+        self.assertEqual(len(self.rows), n)
+
+    def test_https_settings_round_trip(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            with open(path, "w") as f:
+                json.dump({"env": {"NO_PROXY": "corp.internal", "X": "1"}}, f)
+            self.assertTrue(lt._set_https_env(path, True))
+            env = json.load(open(path))["env"]
+            self.assertEqual(env["HTTPS_PROXY"], lt.DESKTOP_URL)
+            self.assertEqual(env["NODE_EXTRA_CA_CERTS"], lt._ca_paths()["cert"])
+            self.assertEqual(env["NO_PROXY"], "corp.internal")  # someone else's value is kept
+            self.assertTrue(lt._set_https_env(path, False))
+            self.assertEqual(json.load(open(path)), {"env": {"NO_PROXY": "corp.internal", "X": "1"}})
+            self.assertFalse(lt._set_https_env(path, False))
+
+    def test_never_overwrites_another_https_proxy(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "settings.json")
+            with open(path, "w") as f:
+                json.dump({"env": {"HTTPS_PROXY": "http://corp-proxy:3128"}}, f)
+            with self.assertRaises(RuntimeError):
+                lt._set_https_env(path, True)
+            self.assertFalse(lt._set_https_env(path, False))
+            self.assertEqual(json.load(open(path))["env"]["HTTPS_PROXY"], "http://corp-proxy:3128")
+
+    @unittest.skipIf(os.name == "nt", "launchd and os.getuid are macOS-only")
+    def test_desktop_on_https_and_off(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".claude", "settings.local.json")
+            saved = (lt.DESKTOP_PLIST, lt.DESKTOP_STATE, lt._launchctl, lt._healthy, sys.platform)
+            lt.DESKTOP_PLIST = os.path.join(d, "agent.plist")
+            lt.DESKTOP_STATE = os.path.join(d, "desktop.json")
+            lt._launchctl = lambda *a: lt.subprocess.CompletedProcess(a, 0, "", "")
+            lt._healthy = lambda timeout=1.0: True
+            sys.platform = "darwin"
+            try:
+                lt.desktop_on(d, ["--https"])
+                self.assertIn("<string>--https</string>", open(lt.DESKTOP_PLIST).read())
+                env = json.load(open(path))["env"]
+                self.assertEqual((env["ANTHROPIC_BASE_URL"], env["HTTPS_PROXY"]), (lt.DESKTOP_URL, lt.DESKTOP_URL))
+                lt.desktop_on(d, [])  # on again without --https takes HTTPS mode back out
+                self.assertNotIn("HTTPS_PROXY", json.load(open(path))["env"])
+                lt.desktop_on(d, ["--https"])
+                self.assertEqual(lt.desktop_off(), [path])
+                self.assertEqual(json.load(open(path)), {})
+            finally:
+                lt.DESKTOP_PLIST, lt.DESKTOP_STATE, lt._launchctl, lt._healthy, sys.platform = saved
 
 
 @unittest.skipIf(os.name == "nt", "uses a POSIX stand-in for the claude command")

@@ -74,7 +74,7 @@ rtk 0.43.0 summarizes hardest and saves its full output to a file the agent can 
 | **Command** | `leantokens hooks install global` | `leantokens desktop on global` | `leantokens wrap claude` |
 | **What it compresses** | Output of noisy commands | Every tool result: JSON, repeated reads, logs | Every tool result, one session |
 | **Claude Code in a terminal** | Yes | Yes (macOS) | Yes |
-| **Claude Code in the desktop app** | Yes | No, the app ignores base URLs | No |
+| **Claude Code in the desktop app** | Yes | With `--https` (see below) | No |
 | **Codex CLI, Aider** | No | Set the URL yourself | Yes |
 | **Undo** | `leantokens hooks uninstall global` | `leantokens desktop off` | Quit the agent |
 
@@ -105,6 +105,18 @@ leantokens desktop off            # stop it and undo every settings change
 Runs the proxy at login (launchd), restarts it within about 2 seconds if it stops, and points Claude Code's settings at it. Settings change only after the proxy is confirmed running, and a backup is kept.
 
 **Already using a gateway?** If your Claude Code settings point `ANTHROPIC_BASE_URL` at a router, cost tracker or company proxy, leantokens goes in front of it: Claude Code → leantokens → your gateway → Anthropic. `desktop off` puts your URL back.
+
+**Claude Code in the desktop app.** The app pins `ANTHROPIC_BASE_URL` to Anthropic, but Claude Code still honors `HTTPS_PROXY` from its settings. Add `--https` and leantokens becomes that proxy too:
+
+```bash
+leantokens desktop on global --https
+```
+
+- It makes a local certificate authority in `~/.leantokens/ca` (with `openssl`) and adds `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` and `NO_PROXY` to the settings file. Nothing goes into your Keychain or system trust store.
+- Only connections to `api.anthropic.com` are decrypted and compressed. Every other host gets a plain tunnel the proxy never reads, and the certificate authority is name-constrained so it can only vouch for `api.anthropic.com`.
+- Your sign-in passes through the local proxy, as it does with a base URL. Keys stay in memory and are never written.
+- There is no fallback: if the proxy is down, desktop sessions can't connect until it's back or you run `leantokens desktop off`, which removes all three settings. launchd restarts it within about 2 seconds.
+- Commands Claude runs inherit `HTTPS_PROXY`, so their HTTPS traffic is tunneled through the proxy too, unchanged.
 
 ### Wrap one session
 
@@ -212,7 +224,7 @@ pbpaste | leantokens - -l high        # compress a prompt (levels: light, medium
 - The proxy compresses only tool output. Your messages and the system prompt are untouched.
 - Savings depend on the work. Log-heavy, test-heavy and JSON-heavy sessions save the most; reading source code saves little, because code is left as written.
 - Conversation history usually costs more than any tool output. `/clear` and `/compact` matter.
-- The Claude desktop app ignores `ANTHROPIC_BASE_URL`, so use hooks there.
+- The Claude desktop app ignores `ANTHROPIC_BASE_URL`: use hooks there, or `desktop on --https`.
 - An `ANTHROPIC_BASE_URL` exported in your shell overrides Claude Code settings and bypasses the always-on proxy. `leantokens doctor` warns about this.
 - Codex signed in with a ChatGPT account talks to ChatGPT's servers and bypasses the proxy. Use an API key login.
 
