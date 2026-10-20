@@ -12,7 +12,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="leantokens">
 <meta property="og:title" content="leantokens · cut the tokens your AI agent spends">
-<meta property="og:description" content="Compress the tool output Claude Code, Codex and LLM apps send to the model. JSON tables, log cleanup, repeat pointers. Open source, one Python file.">
+<meta property="og:description" content="Shrink the tool output Claude Code, Codex and LLM apps send to the model, without hiding failures. Claude Code hooks, an always-on proxy, JSON tables and log cleanup. Open source, one Python file.">
 <meta property="og:url" content="https://leantokens.vercel.app/">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#10162a">
@@ -23,28 +23,28 @@
 <script>(function(){try{var m=localStorage.getItem("lt-theme");if(m==="light"||m==="dark")document.documentElement.dataset.theme=m}catch(e){}})();</script>
 </head>
 <body>
-<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#eef1f9"/><rect x="16" y="12" width="7" height="40" rx="3.5" fill="#111726"/><rect x="34" y="16" width="7" height="36" rx="3.5" fill="#111726"/><rect x="27" y="26" width="25" height="6" rx="3" fill="#e0392d"/></svg>leantokens</a><div class="links"><a href="/docs/">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/leantokens">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
+<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#111726"/><rect class="stem" x="16" y="12" width="7" height="40" rx="3.5" fill="#eef1f9"/><rect class="stem" x="34" y="16" width="7" height="36" rx="3.5" fill="#eef1f9"/><rect class="cut" x="27" y="26" width="25" height="6" rx="3" fill="#ff5a4e"/></svg>leantokens</a><div class="links"><a href="/docs/">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/leantokens">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
 <header class="hero">
   <div class="in">
     <div class="copy">
       <span class="eyebrow">leantokens · open source · one Python file</span>
       <h1>Your agent reads <s>everything</s> what matters.</h1>
-      <p>Coding agents burn most of their tokens re-reading tool output: JSON from APIs, logs, file reads. leantokens sits between the agent and the model and shrinks that output before it is sent. You keep using Claude Code or Codex exactly as before.</p>
-      <div class="cmd"><code>leantokens <b>wrap claude</b></code><button id="copy-hero" data-copy="leantokens wrap claude">Copy</button></div>
-      <p class="first">First install it: <code>pip install git+https://github.com/divyanshus2404/leantokens</code> · <a href="/docs/#quickstart">Quick start</a></p>
-      <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Codex CLI</span><span>Aider</span><span>Anthropic SDK</span><span>OpenAI SDK</span></div>
+      <p>Coding agents spend most of their tokens re-reading tool output: test runs, build logs, git output, JSON. leantokens shrinks that output before the model sees it. Errors are always kept, and you keep using Claude Code exactly as before.</p>
+      <div class="cmd"><code>leantokens <b>hooks install global</b></code><button id="copy-hero" data-copy="leantokens hooks install global">Copy</button></div>
+      <p class="first">First install it: <code>pip install leantokens</code> · <a href="/docs/#quickstart">Quick start</a></p>
+      <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Claude desktop app</span><span>Codex CLI</span><span>Aider</span><span>Anthropic &amp; OpenAI SDKs</span></div>
     </div>
-    <div class="trace" aria-label="Example session">
-      <div class="top"><span>leantokens · test run</span><span>/v1/messages</span></div>
+    <div class="trace" aria-label="A real build log before and after leantokens">
+      <div class="top"><span>Claude Code · Bash(make) · hook on</span><span>best case</span></div>
       <div class="body">
-        <div class="row"><span class="k">tool</span><span>orders_query → 40 rows JSON</span></div>
-        <div class="row"><span class="k">json</span><span>40 objects → 1 header + 40 rows</span></div>
-        <div class="row"><span class="k">tool</span><span>tail app.log → 31 lines</span></div>
-        <div class="row"><span class="k">logs</span><span>30 repeats → 1 line <span class="dim">[x30]</span>, colors stripped</span></div>
-        <div class="row"><span class="k">user</span><span class="dim">your messages: untouched</span></div>
-        <div class="row"><span class="k">stream</span><span class="dim">response passed through as it arrives</span></div>
-        <div class="bar"><i></i></div>
-        <div class="row"><span class="big">72%</span><span style="align-self:end">fewer tool-output tokens<br><span class="dim">~1,164 → ~329 on this request</span></span></div>
+        <div class="row"><span class="k">cmd</span><span>make</span></div>
+        <div class="row"><span class="k">raw</span><span>300 lines, 8,722 characters</span></div>
+        <div class="row"><span class="k">kept</span><span>compiling module...  <span class="dim">[x300]</span></span></div>
+        <div class="row"><span class="k">kept</span><span>BUILD OK: 300 modules</span></div>
+        <div class="row"><span class="k">errors</span><span class="dim">always kept</span></div>
+        <div class="row"><span class="k">full</span><span class="dim">leantokens show ID</span></div>
+        <div class="bar"><i style="width:1%"></i></div>
+        <div class="row"><span class="big">99%</span><span style="align-self:end">less on a repetitive build log<br><span class="dim">mixed real output: about 12% less</span></span></div>
       </div>
     </div>
   </div>
@@ -83,9 +83,9 @@
           <p>A test session heavy on data: an API result fetched twice, 120 log lines, a file and a test run each repeated. 18,466 → 7,304 tokens.</p>
         </div>
         <div class="res">
-          <div class="res-head"><b>14%</b><span>smaller context on average</span></div>
+          <div class="res-head"><b>14%</b><span>smaller context on average, 30–36% with --smart</span></div>
           <div class="meter" aria-hidden="true"><i style="width:14%"></i></div>
-          <p>400 real coding-agent sessions from the public SWE-agent dataset, mostly reading and editing source code. One session in ten saved about 30%.</p>
+          <p>400 real coding-agent sessions from the public SWE-agent dataset, mostly reading and editing source code. <code>--smart</code> also recognizes lines the agent has already seen.</p>
         </div>
       </div>
       <p class="note">Your own numbers: <code>leantokens stats</code> reports what Anthropic or OpenAI actually billed and what was saved.</p>
@@ -177,38 +177,89 @@ ERROR POST /api/checkout 500: payment timeout</pre></div>
 
     <section id="use">
       <div class="head">
-        <span class="eyebrow">Use it your way</span>
-        <h2>Wrap an agent, run a proxy, or pipe a prompt.</h2>
+        <span class="eyebrow">Three ways in</span>
+        <h2>Pick the route that fits how you run Claude.</h2>
+        <p class="lede">Hooks work everywhere Claude Code runs. The proxy routes also compress JSON and repeated reads, for agents that honor a base URL.</p>
       </div>
       <div class="ways">
         <div class="way">
-          <h3>Wrap a coding agent</h3>
+          <span class="tag">Hooks</span>
+          <h3>Filter noisy commands</h3>
+          <p>Tests, installs, builds, <code>git log</code>, <code>ls -l</code> and <code>grep</code> pass through the filter. Runs in every session, desktop app included.</p>
+          <div class="term has-copy">leantokens hooks install global<button class="copy" data-copy="leantokens hooks install global">Copy</button></div>
+        </div>
+        <div class="way">
+          <span class="tag">Always-on proxy</span>
+          <h3>Compress every request</h3>
+          <p>Starts at login (macOS) and serves terminal Claude Code in every project. Off restores your settings.</p>
+          <div class="term has-copy">leantokens desktop on global<button class="copy" data-copy="leantokens desktop on global">Copy</button></div>
+        </div>
+        <div class="way">
+          <span class="tag">Wrap</span>
+          <h3>One session at a time</h3>
           <p>Starts a private proxy, launches the agent pointed at it, and prints what you saved when you quit.</p>
-          <div class="term"><span class="c"># Claude Code</span>
-leantokens wrap claude
-<span class="c"># Codex CLI, API key login</span>
-leantokens wrap codex
-<span class="c"># totals so far</span>
-leantokens stats</div>
-        </div>
-        <div class="way">
-          <h3>Proxy for any app</h3>
-          <p>Point your own code or SDK at the proxy. Keys pass straight through to the provider and are never stored.</p>
-          <div class="term">leantokens proxy
-
-<span class="c"># then, in your app's shell</span>
-export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-export OPENAI_BASE_URL=http://127.0.0.1:8787/v1</div>
-        </div>
-        <div class="way">
-          <h3>Compress a prompt</h3>
-          <p>For chat apps. Cuts filler, greetings and repeats from what you paste into Claude or ChatGPT.</p>
-          <div class="term"><span class="c"># clipboard in, clipboard out (macOS)</span>
-pbpaste | leantokens - -l high | pbcopy
-<span class="c"># tool output from a file</span>
-leantokens api.json --tool</div>
+          <div class="term has-copy">leantokens wrap claude<button class="copy" data-copy="leantokens wrap claude">Copy</button></div>
         </div>
       </div>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead><tr><th scope="col">Where it runs</th><th scope="col">Hooks</th><th scope="col">Always-on proxy</th><th scope="col">Wrap</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Claude Code in a terminal</th><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td></tr>
+            <tr><th scope="row">Claude Code in the desktop app</th><td><span class="yes">✓ works</span></td><td><span class="no">– ignores base URL</span></td><td><span class="no">– not launchable</span></td></tr>
+            <tr><th scope="row">Codex CLI, Aider</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="yes">✓ works</span></td></tr>
+            <tr><th scope="row">Your own SDK code</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="no">–</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="chain">
+      <div class="head">
+        <span class="eyebrow">Gateway chaining</span>
+        <h2>Already using a gateway? leantokens goes in front of it.</h2>
+        <p class="lede">If your Claude Code settings already point <code>ANTHROPIC_BASE_URL</code> at a router, cost tracker or company proxy, <code>desktop on</code> takes that URL as its upstream, so nothing you rely on is skipped.</p>
+      </div>
+      <div class="chain">
+        <div class="hops" aria-label="Request path">
+          <div class="hop"><b>Claude Code</b><span>your session</span></div>
+          <div class="hop lt"><b>leantokens</b><code>127.0.0.1:8787</code><span>shrinks tool output</span></div>
+          <div class="hop"><b>Your gateway</b><code>e.g. 127.0.0.1:17322</code><span>routing, logging, keys</span></div>
+          <div class="hop"><b>Anthropic</b><code>api.anthropic.com</code><span>the model</span></div>
+        </div>
+        <div class="chain-cols">
+          <div><h3>Turn it on</h3><div class="term"><span class="c"># detects the existing URL and forwards to it</span>
+leantokens desktop on global
+leantokens desktop status</div></div>
+          <div><h3>Turn it off</h3><div class="term"><span class="c"># stops the proxy and puts your URL back</span>
+leantokens desktop off</div>
+            <p>An <code>ANTHROPIC_BASE_URL</code> exported in your shell beats Claude Code settings and skips the chain. <code>leantokens doctor</code> tells you when that happens.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="compare">
+      <div class="head">
+        <span class="eyebrow">Compared</span>
+        <h2>Fewer tokens, without hiding the failure.</h2>
+        <p class="lede">The same 7 real command outputs from one Mac, run through each tool. A check mark means every key fact we looked for (failing test names, error lines, list items) was still there.</p>
+      </div>
+      <div class="matrix-wrap">
+        <table class="matrix">
+          <thead><tr><th scope="col">Output</th><th scope="col">Raw tokens</th><th scope="col">rtk</th><th scope="col">Headroom</th><th scope="col">leantokens</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Unit tests, 2 failures</th><td>1,899</td><td><span class="no">67 · failures hidden</span></td><td><span class="yes">1,899 ✓</span></td><td><span class="yes">293 ✓</span></td></tr>
+            <tr><th scope="row">git log --stat, 40 commits</th><td>4,869</td><td><span class="yes">1,271 ✓</span></td><td><span class="yes">4,869 ✓</span></td><td><span class="yes">3,800 ✓</span></td></tr>
+            <tr><th scope="row">grep, 1 file</th><td>963</td><td><span class="no">258 · matches cut</span></td><td><span class="yes">963 ✓</span></td><td><span class="yes">963 ✓</span></td></tr>
+            <tr><th scope="row">grep across 3 paths</th><td>4,921</td><td><span class="yes">1,741 ✓</span></td><td><span class="yes">3,150 ✓</span></td><td><span class="yes">3,385 ✓</span></td></tr>
+            <tr><th scope="row">ls -la, large folder</th><td>10,445</td><td><span class="yes">3,077 ✓</span></td><td><span class="yes">10,445 ✓</span></td><td><span class="yes">7,264 ✓</span></td></tr>
+            <tr><th scope="row">System log, 600 lines</th><td>37,040</td><td><span class="no">614 · error cut</span></td><td><span class="yes">36,279 ✓</span></td><td><span class="yes">21,070 ✓</span></td></tr>
+            <tr><th scope="row">JSON, 25 items</th><td>2,635</td><td><span class="no">93 · 1 of 25 shown</span></td><td><span class="yes">1,592 ✓</span></td><td><span class="yes">1,388 ✓</span></td></tr>
+            <tr><th scope="row">Total saved</th><td>62,772</td><td><b>89%</b> · 9 of 19 facts</td><td><b>6%</b> · 19 of 19</td><td><b>39%</b> · 19 of 19</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">rtk 0.43.0 command wrappers, Headroom 0.41.0 default <code>compress()</code>, leantokens hook plus proxy. rtk saves its full output to a file the agent can read later. Small benchmark, written by the leantokens author; reproduce with <code>python3 bench/compare_tools.py</code>.</p>
     </section>
 
     <section id="install">
@@ -219,8 +270,8 @@ leantokens api.json --tool</div>
       </div>
       <ol class="steps">
         <li><div>
-          <p>Install from GitHub.</p>
-          <div class="term has-copy">pip install git+https://github.com/divyanshus2404/leantokens<button class="copy" data-copy="pip install git+https://github.com/divyanshus2404/leantokens">Copy</button></div>
+          <p>Install from PyPI.</p>
+          <div class="term has-copy">pip install leantokens<button class="copy" data-copy="pip install leantokens">Copy</button></div>
           <p class="note">No pip? Copy the script instead, save it as <code>leantokens.py</code>, and run <code>python3 leantokens.py</code> wherever this page says <code>leantokens</code>.</p>
           <div><button class="btn primary" id="copy-script">Copy leantokens.py</button></div>
           <div class="term has-copy"><span class="c"># macOS: save what you just copied</span>
@@ -228,12 +279,16 @@ pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.p
           <p class="note">Linux: <code>xclip -o -sel clip &gt; leantokens.py</code>. Windows: paste into Notepad and save as <code>leantokens.py</code>.</p>
         </div></li>
         <li><div>
-          <p>Run your agent through it.</p>
-          <div class="term has-copy">leantokens wrap claude<button class="copy" data-copy="leantokens wrap claude">Copy</button></div>
+          <p>Turn on the hook, then start a new Claude Code session.</p>
+          <div class="term has-copy">leantokens hooks install global<button class="copy" data-copy="leantokens hooks install global">Copy</button></div>
+        </div></li>
+        <li><div>
+          <p>Check your setup. It says exactly what to fix.</p>
+          <div class="term has-copy">leantokens doctor<button class="copy" data-copy="leantokens doctor">Copy</button></div>
         </div></li>
         <li><div>
           <p>Optional: exact token counts.</p>
-          <div class="term has-copy">pip install tiktoken<button class="copy" data-copy="pip install tiktoken">Copy</button></div>
+          <div class="term has-copy">pip install "leantokens[exact]"<button class="copy" data-copy='pip install "leantokens[exact]"'>Copy</button></div>
         </div></li>
       </ol>
       <details>
@@ -252,7 +307,8 @@ pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.p
         <details><summary>Is my API key or Claude sign-in safe?</summary><p>The proxy runs only on your computer, listens on 127.0.0.1, and passes credentials straight to Anthropic or OpenAI. They are never stored or logged.</p></details>
         <details><summary>Does it break prompt caching?</summary><p>No. Compression is deterministic and never rewrites earlier turns, so each request still begins with the same bytes as the last one and cache hits keep landing.</p></details>
         <details><summary>Does it work with claude.ai or chatgpt.com?</summary><p>Those sites talk directly to their own servers, so no proxy can sit in between. You can compress text before pasting it: <code>pbpaste | leantokens - -l high | pbcopy</code> on macOS.</p></details>
-        <details><summary>What if something goes wrong?</summary><p>Run without it: plain <code>claude</code> works exactly as before. leantokens changes nothing on your system; it only sets a base URL for the agent it launches.</p></details>
+        <details><summary>How do I know it's working?</summary><p>In a new Claude Code session, run something noisy like your tests. Shortened output carries a line such as <code>[40 passing test lines omitted; full output: leantokens show ID]</code>. <code>leantokens stats</code> counts every request it touched.</p></details>
+        <details><summary>What if something goes wrong?</summary><p>Undo it in one command: <code>leantokens hooks uninstall global</code> or <code>leantokens desktop off</code>. Both restore your Claude Code settings from a backup, and plain <code>claude</code> works exactly as before.</p></details>
         <details><summary>What does it cost?</summary><p>Nothing. It's MIT-licensed, one Python file, no account and no telemetry.</p></details>
       </div>
     </section>
@@ -265,6 +321,9 @@ pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.p
       <ul class="limits">
         <li><b>It only touches tool output.</b> Your messages and the system prompt reach the model unchanged.</li>
         <li><b>Savings depend on the work.</b> JSON-heavy and log-heavy sessions save the most. Sessions that mostly read source code save little, because code is left as written.</li>
+        <li><b>History often costs more.</b> Every reply resends the conversation. <code>/clear</code> between tasks and <code>/compact</code> in long sessions save more than any filter.</li>
+        <li><b>The desktop app skips the proxy.</b> Its Code sessions ignore <code>ANTHROPIC_BASE_URL</code>. Use hooks there.</li>
+        <li><b>A shell variable wins.</b> <code>ANTHROPIC_BASE_URL</code> exported in your shell overrides Claude Code settings, including the always-on proxy.</li>
         <li><b>Codex with a ChatGPT login</b> talks to ChatGPT's servers, not the API, so it bypasses the proxy. Use an API key login.</li>
         <li><b>Chat apps in the browser</b> (claude.ai, chatgpt.com) can't be proxied. Use the prompt compressor and paste.</li>
       </ul>

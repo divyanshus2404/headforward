@@ -22,7 +22,7 @@
 <script>(function(){try{var m=localStorage.getItem("lt-theme");if(m==="light"||m==="dark")document.documentElement.dataset.theme=m}catch(e){}})();</script>
 </head>
 <body>
-<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#eef1f9"/><rect x="16" y="12" width="7" height="40" rx="3.5" fill="#111726"/><rect x="34" y="16" width="7" height="36" rx="3.5" fill="#111726"/><rect x="27" y="26" width="25" height="6" rx="3" fill="#e0392d"/></svg>leantokens</a><div class="links"><a href="/docs/" aria-current="page">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/leantokens">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
+<nav class="topnav"><div class="in"><a class="logo" href="/"><svg class="mark" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true"><rect class="tile" width="64" height="64" rx="14" fill="#111726"/><rect class="stem" x="16" y="12" width="7" height="40" rx="3.5" fill="#eef1f9"/><rect class="stem" x="34" y="16" width="7" height="36" rx="3.5" fill="#eef1f9"/><rect class="cut" x="27" y="26" width="25" height="6" rx="3" fill="#ff5a4e"/></svg>leantokens</a><div class="links"><a href="/docs/" aria-current="page">Docs</a><a href="/docs/#cli">CLI reference</a><a href="https://github.com/divyanshus2404/leantokens">GitHub</a><button class="theme-btn" id="theme-btn" type="button" aria-label="Color theme">Auto</button></div></div></nav>
 
 <div class="in docs">
   <nav class="toc" aria-label="On this page">
@@ -30,6 +30,8 @@
     <a href="#install">Install</a>
     <a href="#quickstart">Quick start</a>
     <b>Use it</b>
+    <a href="#hooks">Hooks (desktop app too)</a>
+    <a href="#always-on">Always-on proxy</a>
     <a href="#agents">Coding agents</a>
     <a href="#proxy">Proxy for your app</a>
     <a href="#prompts">Prompt compression</a>
@@ -46,24 +48,48 @@
 
   <article class="doc">
     <h1>leantokens documentation</h1>
-    <p>leantokens runs a small proxy on your computer between a coding agent and the model. It shrinks tool output (JSON, logs, file reads, repeated results) before it is sent, so every turn costs fewer input tokens. Your own messages are never changed.</p>
+    <p>leantokens shrinks the tool output a coding agent reads (test runs, build logs, git output, JSON, file reads) before it reaches the model, so every turn costs fewer input tokens. It runs as a Claude Code hook, a local proxy, or both. Error lines are always kept, anything shortened can be read back, and your own messages are never changed.</p>
 
     <h2 id="install">Install</h2>
     <p>Requires Python 3.9 or newer on macOS, Linux or Windows. There are no other dependencies.</p>
-    <pre>pip install git+https://github.com/divyanshus2404/leantokens</pre>
+    <pre>pip install leantokens</pre>
     <p>Optional, for exact token counts instead of estimates:</p>
-    <pre>pip install tiktoken</pre>
+    <pre>pip install "leantokens[exact]"</pre>
     <p class="callout">No pip? leantokens is one file. Save <a href="/leantokens.py">leantokens.py</a> and run <code>python3 leantokens.py</code> wherever these docs say <code>leantokens</code>.</p>
 
     <h2 id="quickstart">Quick start</h2>
     <ol>
-      <li>Open a terminal in your project folder.</li>
-      <li>Start your agent through leantokens:
-        <pre>leantokens wrap claude</pre></li>
-      <li>Work as usual. When you exit, leantokens prints what you were billed and how much it saved.</li>
+      <li>Turn on the hook for every Claude Code session, desktop app included:
+        <pre>leantokens hooks install global</pre></li>
+      <li>Check your setup. It prints the fix for anything wrong:
+        <pre>leantokens doctor</pre></li>
+      <li>Start a new Claude Code session and work as usual. When a noisy command is shortened, its output ends with a line like <code>[40 passing test lines omitted; full output: leantokens show ID]</code>.</li>
       <li>See running totals any time:
         <pre>leantokens stats</pre></li>
     </ol>
+
+    <h2 id="hooks">Hooks (desktop app too)</h2>
+    <p>A Claude Code <code>PreToolUse</code> hook pipes noisy commands through the filter. It runs inside every session, including Claude Code in the desktop app, which proxies can't reach.</p>
+    <pre>leantokens hooks install global          # or one project: leantokens hooks install ~/code/my-app
+leantokens hooks uninstall global</pre>
+    <div class="tbl"><table>
+      <tr><th>Commands</th><th>What happens</th></tr>
+      <tr><td>Tests: <code>pytest</code>, <code>npm test</code>, <code>go test</code>, <code>cargo test</code> and similar</td><td>Passing-test lines collapse to a count. Failures, tracebacks and the summary are kept.</td></tr>
+      <tr><td>Installs and builds: <code>pip install</code>, <code>npm install</code>, <code>make</code>, <code>cargo build</code>, <code>docker build</code></td><td>Download, progress and build-step lines collapse to a count.</td></tr>
+      <tr><td><code>git log</code></td><td>Hashes shortened, a single author stated once, stat bar graphs dropped.</td></tr>
+      <tr><td><code>ls -l</code></td><td>Link counts dropped, a single owner stated once.</td></tr>
+      <tr><td><code>grep</code>, <code>rg</code></td><td>Matches grouped under their file.</td></tr>
+      <tr><td><code>log show</code> and timestamped logs</td><td>Near-identical lines counted on the first one.</td></tr>
+    </table></div>
+    <p>Every other command is left alone. Error-like lines are always kept, the command's exit code is preserved, and the full output is saved: <code>leantokens show ID</code> prints it, and <code>--lines A-B</code> prints part of it.</p>
+
+    <h2 id="always-on">Always-on proxy (macOS)</h2>
+    <p>Runs the proxy at login and points Claude Code's settings at it, so every terminal session is compressed without typing <code>wrap</code>.</p>
+    <pre>leantokens desktop on global      # or one project: leantokens desktop on ~/code/my-app
+leantokens desktop status         # running? which settings use it? where does it forward?
+leantokens desktop off            # stop it and undo every settings change</pre>
+    <p>Settings change only after the proxy is confirmed running, and a backup is kept. If your settings already point <code>ANTHROPIC_BASE_URL</code> at another gateway (a router, cost tracker or company proxy), leantokens goes in front of it: Claude Code → leantokens → your gateway → Anthropic. <code>desktop off</code> puts your URL back.</p>
+    <p class="callout">Claude Code in the desktop app ignores <code>ANTHROPIC_BASE_URL</code>, so use hooks there. An <code>ANTHROPIC_BASE_URL</code> exported in your shell overrides Claude Code settings and skips the proxy; <code>leantokens doctor</code> warns about it.</p>
 
     <h2 id="agents">Coding agents</h2>
     <p><code>wrap</code> starts a private proxy on a random local port, launches the agent pointed at it, and shuts the proxy down when the agent exits.</p>
@@ -129,6 +155,8 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
       <tr><td>A tool result identical to an earlier one</td><td>Replaced by <code>[Same output as tool call X above.]</code></td><td>Yes. The earlier copy is still in context.</td></tr>
       <tr><td>Logs and command output</td><td>Repeated lines collapse to one line with a count. Terminal color codes and trailing spaces are removed.</td><td>Yes, apart from color codes.</td></tr>
       <tr><td>File reads</td><td>Line-number padding is trimmed.</td><td>Yes.</td></tr>
+      <tr><td>Routine command output (hooks, <code>--smart</code>)</td><td>Runs of 3+ installs, progress bars, passing tests or build steps collapse to a count.</td><td>Recoverable with <code>leantokens show ID</code>.</td></tr>
+      <tr><td>Git log, <code>ls -l</code>, grep, timestamped logs (hooks, <code>--lossy</code>)</td><td>Repeated and derivable parts removed; every distinct line kept.</td><td>Recoverable with <code>leantokens show ID</code>.</td></tr>
       <tr><td>Runs of near-identical log lines (<code>--lossy</code> only)</td><td>First and last lines kept, the middle replaced by a count.</td><td>No.</td></tr>
     </table></div>
     <p>Here is a JSON result before and after:</p>
@@ -145,6 +173,10 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
       <tr><th>Command</th><th>Options</th></tr>
       <tr><td><code>leantokens wrap AGENT [args]</code></td><td><code>--lossy</code>, <code>--record FOLDER</code></td></tr>
       <tr><td><code>leantokens proxy</code></td><td><code>--port N</code> (default 8787), <code>--upstream URL</code>, <code>--lossy</code>, <code>--record FOLDER</code></td></tr>
+      <tr><td><code>leantokens hooks install|uninstall [PROJECT|global]</code></td><td>none</td></tr>
+      <tr><td><code>leantokens desktop on|off|status [PROJECT|global]</code></td><td><code>--smart</code></td></tr>
+      <tr><td><code>leantokens doctor</code></td><td>none</td></tr>
+      <tr><td><code>leantokens show ID</code></td><td><code>--lines A-B</code></td></tr>
       <tr><td><code>leantokens stats</code></td><td>none</td></tr>
       <tr><td><code>leantokens eval FOLDER</code></td><td><code>--tokens-only</code>, <code>--limit N</code> (default 50), <code>--lossy</code>, <code>--max-tokens N</code></td></tr>
       <tr><td><code>leantokens FILE</code> (or <code>-</code> for stdin)</td><td><code>-l, --level</code> light | medium | high | max; <code>-t, --tool</code>; <code>--lossy</code>; <code>-s, --stats</code>; <code>-q, --quiet</code>; <code>--model NAME</code></td></tr>
@@ -173,6 +205,8 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
       <li>Savings depend on the work. JSON-heavy, log-heavy and repetitive sessions save the most. Sessions that mostly read new source code save little, because code is left as written.</li>
       <li>Browser chat apps (claude.ai, chatgpt.com) can't be proxied. Use prompt compression and paste.</li>
       <li>Codex signed in with a ChatGPT account bypasses the proxy. Use an API key.</li>
+      <li>Claude Code in the desktop app ignores <code>ANTHROPIC_BASE_URL</code>. Use hooks there.</li>
+      <li>Conversation history usually costs more than tool output. <code>/clear</code> between tasks and <code>/compact</code> in long sessions matter.</li>
     </ul>
 
     <h2 id="troubleshooting">Troubleshooting</h2>
@@ -181,7 +215,7 @@ leantokens eval ~/lt-rec                   # also compare the model's answers</p
     <h3><code>leantokens: command not found</code></h3>
     <p>The folder pip installs scripts into isn't on your PATH. Run <code>python3 -m pip show -f leantokens</code> to find it, or run the single file with <code>python3 leantokens.py</code>.</p>
     <h3>No savings were recorded</h3>
-    <p>Check that the agent really used the proxy: <code>leantokens stats</code> counts only requests that went through it. Codex with a ChatGPT login and browser apps never do.</p>
+    <p>Hooks and settings apply to new sessions only, so start a new Claude Code session. Then run something noisy, like your tests, and look for a <code>leantokens show ID</code> line in the output. For the proxy, run <code>leantokens doctor</code>: a shell <code>ANTHROPIC_BASE_URL</code> overrides Claude Code settings and skips it. Codex with a ChatGPT login and browser apps never reach the proxy.</p>
     <h3>A command with <code>!</code> hangs at <code>dquote&gt;</code></h3>
     <p>In zsh, <code>!</code> inside double quotes is history expansion. Press Ctrl-C, then use single quotes: <code>echo 'Hello!' | leantokens -</code>.</p>
   </article>
