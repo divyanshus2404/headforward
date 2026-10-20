@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img src="assets/logo.svg" alt="leantokens logo" width="96" height="96">
+  </picture>
+</p>
+
 # leantokens
 
 [![PyPI](https://img.shields.io/pypi/v/leantokens)](https://pypi.org/project/leantokens/)

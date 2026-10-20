@@ -74,6 +74,8 @@ button { font-family: var(--body); }
 .hero .in { padding-block: 64px 72px; display: grid; grid-template-columns: 1fr 1.02fr; gap: 56px; align-items: center; }
 .hero .copy { display: grid; gap: 24px; min-width: 0; }
 .hero .eyebrow { color: var(--band-accent); }
+.hero .brand { display: flex; align-items: center; gap: 12px; }
+.hero .brand .mark { flex: none; }
 .hero h1 { font-weight: 800; font-size: clamp(2.5rem, 6.2vw, 4.6rem); line-height: 0.95; letter-spacing: -0.035em; }
 .hero h1 s { color: var(--band-cut); font-weight: 500; text-decoration-thickness: 0.08em; }
 .hero h1 em { font-style: normal; color: var(--band-keep); }
@@ -232,7 +234,7 @@ footer .in { padding-block: 24px 32px; display: flex; flex-wrap: wrap; gap: 8px 
 <header class="hero">
   <div class="in">
     <div class="copy">
-      <span class="eyebrow">leantokens &middot; open source &middot; one Python file</span>
+      <div class="brand"><svg class="mark" width="36" height="36" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#eef1f9"/><rect x="16" y="12" width="7" height="40" rx="3.5" fill="#111726"/><rect x="34" y="16" width="7" height="36" rx="3.5" fill="#111726"/><rect x="27" y="26" width="25" height="6" rx="3" fill="#e0392d"/></svg><span class="eyebrow">leantokens &middot; open source &middot; one Python file</span></div>
       <h1>Your agent reads <s>everything</s> <em>what matters.</em></h1>
       <p>Coding agents spend most of their tokens re-reading tool output: build logs, test runs, JSON, file reads. leantokens shrinks that output before the model sees it. You keep using Claude Code exactly as before.</p>
       <div class="cmd"><code><i>$</i> leantokens <b>hooks install global</b></code><button id="copy-hero" data-copy="leantokens hooks install global">Copy</button></div>

@@ -166,7 +166,8 @@ body { margin: 0; }
 .topnav .in { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 12px; flex-wrap: wrap; }
 .topnav a { color: var(--band-muted); text-decoration: none; font-weight: 500; font-size: 0.92rem; }
 .topnav a:hover, .topnav a[aria-current="page"] { color: var(--band-ink); }
-.topnav .logo { font: 800 1.15rem var(--display); color: var(--band-ink); letter-spacing: -0.01em; }
+.topnav .logo { display: inline-flex; align-items: center; gap: 10px; font: 800 1.15rem var(--display); color: var(--band-ink); letter-spacing: -0.01em; }
+.topnav .logo .mark { flex: none; }
 .topnav .links { display: flex; gap: 20px; flex-wrap: wrap; }
 .site-foot { border-top: 1px solid var(--line); color: var(--muted); font-size: 0.88rem; }
 .site-foot .in { display: flex; gap: 20px; flex-wrap: wrap; padding-block: 24px; }
