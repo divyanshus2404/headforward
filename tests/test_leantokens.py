@@ -410,6 +410,7 @@ class DesktopTests(unittest.TestCase):
             self.assertTrue(lt._set_base_url(path, None))
             self.assertEqual(json.load(open(path)), {"model": "opus", "env": {"BASH_MAX_OUTPUT_LENGTH": "30000"}})
 
+    @unittest.skipIf(os.name == "nt", "launchd and os.getuid are macOS-only")
     def test_on_chains_in_front_of_existing_gateway_and_off_restores_it(self):
         gateway = "http://127.0.0.1:17322"
         with tempfile.TemporaryDirectory() as d:

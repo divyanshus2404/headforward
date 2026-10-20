@@ -454,6 +454,14 @@ def _reference_runs(out, label, shadow):
     return "\n".join(res)
 
 
+def _rel(path):
+    """Path relative to the current folder, or absolute when that is impossible (another Windows drive)."""
+    try:
+        return os.path.relpath(path)
+    except ValueError:
+        return os.path.abspath(path)
+
+
 def _save_blob(text):
     """Keep the full text of an output we shortened; return its ID, or None on failure."""
     blob = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()[:12]
@@ -1558,7 +1566,7 @@ def pack_files(paths, budget=None, outline_code=False):
             body = compress_tool(text)
         else:
             body = "\n".join(l.rstrip() for l in text.split("\n")).strip("\n")
-        doc = '<document path="%s">\n%s\n</document>' % (os.path.relpath(f), body)
+        doc = '<document path="%s">\n%s\n</document>' % (_rel(f), body)
         cost = count(doc)[0]
         if budget and used + cost > budget:
             skipped.append((f, "over the token budget"))
@@ -1604,10 +1612,10 @@ def cmd_pack(argv):
              "" if exact else " (estimate)", format(raw_chars, ","), dest), file=sys.stderr)
     top = sorted(included, key=lambda x: -x[2])[:5]
     if len(included) > 1:
-        print("  largest: " + ", ".join("%s (%s)" % (os.path.relpath(f), format(t, ",")) for f, _, t in top),
+        print("  largest: " + ", ".join("%s (%s)" % (_rel(f), format(t, ",")) for f, _, t in top),
               file=sys.stderr)
     for f, why in skipped[:15]:
-        print("  skipped %s: %s" % (os.path.relpath(f), why), file=sys.stderr)
+        print("  skipped %s: %s" % (_rel(f), why), file=sys.stderr)
     if len(skipped) > 15:
         print("  ...and %d more skipped" % (len(skipped) - 15), file=sys.stderr)
     return 0
@@ -2019,7 +2027,7 @@ def code_map(paths, budget=None):
         lines = outline(f, text)
         if lines is None or not lines:
             continue
-        block = "%s\n%s" % (os.path.relpath(f), "\n".join(lines))
+        block = "%s\n%s" % (_rel(f), "\n".join(lines))
         cost = count(block)[0]
         if budget and used + cost > budget:
             parts.append("... (stopped at the %s-token budget)" % format(budget, ","))
