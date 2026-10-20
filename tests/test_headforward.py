@@ -39,6 +39,27 @@ def random_json(rng, depth=0):
     return rng.choice([None, True, False, 0, -3, 2.5, "", "text", "ünïcode"])
 
 
+_SANDBOX = tempfile.TemporaryDirectory()
+
+
+def setUpModule():
+    # desktop tests stub launchctl; keep them away from the real pre-rename service too
+    global _real_old
+    _real_old = (hf.OLD_PLIST, hf.OLD_LABEL)
+    hf.OLD_PLIST = os.path.join(_SANDBOX.name, "old.plist")
+    hf.OLD_LABEL = "com.headforward.test-old"
+
+
+def tearDownModule():
+    hf.OLD_PLIST, hf.OLD_LABEL = _real_old
+    _SANDBOX.cleanup()
+
+
+def _fake_launchctl(*a):
+    # "print" fails: no old service is loaded in these tests
+    return hf.subprocess.CompletedProcess(a, 1 if a[0] == "print" else 0, "", "")
+
+
 class PromptTests(unittest.TestCase):
     def test_medium_cuts_filler_and_repeats(self):
         text = "Hi Claude! Could you please make sure it is able to handle a large number of items? " \
@@ -426,7 +447,7 @@ class DesktopTests(unittest.TestCase):
             saved = (hf.DESKTOP_PLIST, hf.DESKTOP_STATE, hf._launchctl, hf._healthy, sys.platform)
             hf.DESKTOP_PLIST = os.path.join(d, "agent.plist")
             hf.DESKTOP_STATE = os.path.join(d, "desktop.json")
-            hf._launchctl = lambda *a: hf.subprocess.CompletedProcess(a, 0, "", "")
+            hf._launchctl = _fake_launchctl
             hf._healthy = lambda timeout=1.0: True
             sys.platform = "darwin"
             try:
@@ -919,7 +940,7 @@ class HttpsProxyTests(unittest.TestCase):
             saved = (hf.DESKTOP_PLIST, hf.DESKTOP_STATE, hf._launchctl, hf._healthy, sys.platform)
             hf.DESKTOP_PLIST = os.path.join(d, "agent.plist")
             hf.DESKTOP_STATE = os.path.join(d, "desktop.json")
-            hf._launchctl = lambda *a: hf.subprocess.CompletedProcess(a, 0, "", "")
+            hf._launchctl = _fake_launchctl
             hf._healthy = lambda timeout=1.0: True
             sys.platform = "darwin"
             try:
@@ -1019,7 +1040,9 @@ class RenameTests(unittest.TestCase):
         hf.OLD_PLIST = os.path.join(d, "old.plist")
         hf.DESKTOP_STATE = os.path.join(d, "desktop.json")
         hf._launchctl = lambda *a: calls.append(a) or hf.subprocess.CompletedProcess(a, 0, "", "")
-        hf._healthy = lambda timeout=1.0: any(a[0] == "bootstrap" for a in calls)  # up once the new one starts
+        # the old proxy answers until it is booted out; the new one once it is bootstrapped
+        hf._healthy = lambda timeout=1.0: (any(a[0] == "bootstrap" for a in calls)
+                                           or not any(a[0] == "bootout" for a in calls))
         sys.platform = "darwin"
         open(hf.OLD_PLIST, "w").close()
         try:
@@ -1031,6 +1054,31 @@ class RenameTests(unittest.TestCase):
                             [i for i, a in enumerate(calls) if a[0] == "bootstrap"][0])
         finally:
             (hf.DESKTOP_PLIST, hf.OLD_PLIST, hf.DESKTOP_STATE, hf._launchctl, hf._healthy, sys.platform) = saved
+
+    @unittest.skipIf(os.name == "nt", "launchd and os.getuid are macOS-only")
+    def test_old_service_loaded_without_its_file_is_still_stopped(self):
+        calls = []
+        saved = (hf._launchctl, hf._healthy)
+        hf._launchctl = lambda *a: calls.append(a) or hf.subprocess.CompletedProcess(a, 0, "", "")
+        hf._healthy = lambda timeout=1.0: not any(a[0] == "bootout" for a in calls)
+        try:
+            self.assertFalse(os.path.exists(hf.OLD_PLIST))
+            self.assertTrue(hf._remove_old_service())
+            self.assertIn("bootout", [a[0] for a in calls])
+        finally:
+            hf._launchctl, hf._healthy = saved
+
+    @unittest.skipIf(os.name == "nt", "launchd and os.getuid are macOS-only")
+    def test_old_service_that_wont_stop_is_an_error(self):
+        saved = (hf._launchctl, hf._healthy, hf.time.sleep)
+        hf._launchctl = lambda *a: hf.subprocess.CompletedProcess(a, 0, "", "")
+        hf._healthy = lambda timeout=1.0: True
+        hf.time.sleep = lambda s: None
+        try:
+            with self.assertRaises(RuntimeError):
+                hf._remove_old_service()
+        finally:
+            hf._launchctl, hf._healthy, hf.time.sleep = saved
 
     @unittest.skipIf(os.name == "nt", "runs the shim as a script")
     def test_old_entry_point_runs_headforward(self):
