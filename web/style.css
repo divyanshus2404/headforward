@@ -1,5 +1,5 @@
 
-/* Layout: a tinted hero band (ink-dark in dark mode) holding the one command and a live trace, then a light working page:
+/* headforward. Layout: a tinted hero band (ink-dark in dark mode) holding the one command and a live trace, then a light working page:
    playground, ways to run it, install, limits. Redline motif: cut text is struck in red. */
 :root {
   --bg: #f3f5f8;
@@ -7,23 +7,23 @@
   --ink: #141a26;
   --muted: #5b6577;
   --line: #d8dde6;
-  --accent: #2d4bd8;
+  --accent: #0b7a6e;
   --accent-ink: #ffffff;
   --cut: #c4322b;
   --cut-bg: #fbe5e3;
-  --band: #e9eefc;
-  --band-ink: #10162a;
-  --band-muted: #4b5670;
-  --band-line: #c9d2ea;
-  --band-accent: #2d4bd8;
+  --band: #e3f3ef;
+  --band-ink: #0b1d1c;
+  --band-muted: #46625e;
+  --band-line: #c3e0d9;
+  --band-accent: #0b7a6e;
   --band-cut: #c4322b;
   --band-raise: #ffffff;
-  --band-btn: #dfe5f7;
-  --band-btn-ink: #10162a;
+  --band-btn: #d2ebe5;
+  --band-btn-ink: #0b1d1c;
   --trace-bg: #ffffff;
-  --trace-fg: #26304a;
-  --trace-dim: #7a849b;
-  --trace-track: #dfe5f2;
+  --trace-fg: #23403c;
+  --trace-dim: #6c8783;
+  --trace-track: #d5e9e4;
   --term-bg: #151b29;
   --term-fg: #dfe5f2;
   --term-dim: #8a94ab;
@@ -31,7 +31,7 @@
   --body: "Instrument Sans", system-ui, -apple-system, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
   --sunk: #eaeef5;
-  --accent-soft: #e4e8ff;
+  --accent-soft: #dcf1ec;
   --keep: #13804f;
   --keep-bg: #dcf3e7;
   color-scheme: light;
@@ -39,18 +39,18 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
-    --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
+    --accent: #5ed3bf; --accent-ink: #08110f; --cut: #ff8a80; --cut-bg: #3a1d1f;
     --term-bg: #0a0d14; color-scheme: dark;
-    --sunk: #121723; --accent-soft: #232b4d; --keep: #6ad6a0; --keep-bg: #15301f;
-    --band: #080b14; --band-ink: #eef1f8; --band-muted: #9aa6c2; --band-line: #1f2840; --band-accent: #93a6ff; --band-cut: #ff8f86; --band-raise: #1b2338; --band-btn: #2c3755; --band-btn-ink: #eef1f8; --trace-bg: #0b1020; --trace-fg: #cfd6e6; --trace-dim: #6f7a94; --trace-track: #26304a;
+    --sunk: #121723; --accent-soft: #133631; --keep: #6ad6a0; --keep-bg: #15301f;
+    --band: #061210; --band-ink: #ecf6f3; --band-muted: #93b3ad; --band-line: #17302c; --band-accent: #63d8c4; --band-cut: #ff8f86; --band-raise: #0f2421; --band-btn: #1d3c37; --band-btn-ink: #ecf6f3; --trace-bg: #081614; --trace-fg: #cde3de; --trace-dim: #6d8f89; --trace-track: #1e3a35;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0f131c; --surface: #171d2a; --ink: #e8ecf4; --muted: #98a2b6; --line: #2a3243;
-  --accent: #8ea2ff; --accent-ink: #0f131c; --cut: #ff8a80; --cut-bg: #3a1d1f;
+  --accent: #5ed3bf; --accent-ink: #08110f; --cut: #ff8a80; --cut-bg: #3a1d1f;
   --term-bg: #0a0d14; color-scheme: dark;
-    --sunk: #121723; --accent-soft: #232b4d; --keep: #6ad6a0; --keep-bg: #15301f;
-    --band: #080b14; --band-ink: #eef1f8; --band-muted: #9aa6c2; --band-line: #1f2840; --band-accent: #93a6ff; --band-cut: #ff8f86; --band-raise: #1b2338; --band-btn: #2c3755; --band-btn-ink: #eef1f8; --trace-bg: #0b1020; --trace-fg: #cfd6e6; --trace-dim: #6f7a94; --trace-track: #26304a;
+    --sunk: #121723; --accent-soft: #133631; --keep: #6ad6a0; --keep-bg: #15301f;
+    --band: #061210; --band-ink: #ecf6f3; --band-muted: #93b3ad; --band-line: #17302c; --band-accent: #63d8c4; --band-cut: #ff8f86; --band-raise: #0f2421; --band-btn: #1d3c37; --band-btn-ink: #ecf6f3; --trace-bg: #081614; --trace-fg: #cde3de; --trace-dim: #6d8f89; --trace-track: #1e3a35;
 }
 * { box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font: 400 1rem/1.55 var(--body); }
@@ -81,7 +81,7 @@ button { font-family: var(--body); }
 .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--band-ink); font-size: 0.95rem; }
 .cmd code b { color: var(--band-accent); font-weight: 600; }
 .cmd button, .term .copy { font-weight: 600; font-size: 0.8rem; background: var(--band-btn); color: var(--band-btn-ink); border: 0; padding: 8px 12px; border-radius: 7px; cursor: pointer; flex: none; }
-.term .copy { background: #2c3755; color: #eef1f8; } /* code blocks stay dark in both themes */
+.term .copy { background: #1d3c37; color: #ecf6f3; } /* code blocks stay dark in both themes */
 .agents { display: flex; flex-wrap: wrap; gap: 8px; }
 .agents span { font: 500 0.8rem var(--mono); color: var(--band-muted); border: 1px solid var(--band-line); padding: 4px 10px; border-radius: 99px; }
 
@@ -231,7 +231,7 @@ body { margin: 0; }
 .ba { position: relative; min-width: 0; }
 .ba pre { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 30px 14px 12px; font: 400 0.76rem/1.55 var(--mono); overflow-x: auto; }
 .ba .tag { position: absolute; top: 8px; left: 14px; font: 600 0.66rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: #8a94ab; }
-.ba .tag.after { color: #93a6ff; }
+.ba .tag.after { color: #63d8c4; }
 .faq { display: grid; gap: 8px; max-width: 80ch; }
 .faq details p { padding: 0 16px 14px; color: var(--muted); }
 .faq code { font-size: 0.85em; }
@@ -275,7 +275,7 @@ table.matrix { width: 100%; border-collapse: collapse; font-size: 0.92rem; min-w
 .chain-cols > div { display: grid; gap: 10px; align-content: start; min-width: 0; }
 .chain-cols p { color: var(--muted); font-size: 0.95rem; }
 .topnav .logo .mark .tile { fill: var(--band-ink); }
-.topnav .logo .mark .stem { fill: var(--band); }
+.topnav .logo .mark .head { stroke: var(--band); }
 .topnav .logo .mark .cut { fill: var(--band-cut); }
 @media (max-width: 960px) {
   .hops { grid-template-columns: 1fr 1fr; gap: 10px; }
