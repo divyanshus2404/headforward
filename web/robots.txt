@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://leantokens.vercel.app/sitemap.xml

@@ -205,3 +205,36 @@ body { margin: 0; }
 .theme-btn { font: 500 0.85rem var(--body); background: transparent; color: var(--band-muted); border: 1px solid var(--band-line); border-radius: 99px; padding: 4px 12px; cursor: pointer; }
 .theme-btn:hover { color: var(--band-ink); }
 .topnav .links { align-items: center; }
+
+/* Landing additions */
+.hero .first { font-size: 0.88rem; color: var(--band-muted); }
+.hero .first code { color: var(--band-ink); overflow-wrap: anywhere; }
+.hero .first a { color: var(--band-accent); }
+.results { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.res { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 12px; align-content: start; }
+.res-head { display: flex; align-items: baseline; gap: 8px; }
+.res-head b { font: 800 2.4rem/1 var(--display); color: var(--accent); font-variant-numeric: tabular-nums; }
+.res-head span { color: var(--muted); font-size: 0.9rem; }
+.meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.res p { color: var(--muted); font-size: 0.93rem; }
+.compare { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.pair { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.pair > p { color: var(--muted); font-size: 0.92rem; }
+.ba { position: relative; min-width: 0; }
+.ba pre { margin: 0; background: var(--term-bg); color: var(--term-fg); border-radius: 10px; padding: 30px 14px 12px; font: 400 0.76rem/1.55 var(--mono); overflow-x: auto; }
+.ba .tag { position: absolute; top: 8px; left: 14px; font: 600 0.66rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: #8a94ab; }
+.ba .tag.after { color: #93a6ff; }
+.faq { display: grid; gap: 8px; max-width: 80ch; }
+.faq details p { padding: 0 16px 14px; color: var(--muted); }
+.faq code { font-size: 0.85em; }
+@media (max-width: 900px) {
+  .results, .compare { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .topnav .links { gap: 14px; }
+  .topnav .links a[href="/docs/#cli"] { display: none; }
+  .topnav .in { flex-wrap: nowrap; }
+}
+
+main section { scroll-margin-top: 72px; }

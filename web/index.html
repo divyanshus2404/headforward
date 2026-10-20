@@ -8,6 +8,15 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="/style.css">
+<link rel="canonical" href="https://leantokens.vercel.app/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="leantokens">
+<meta property="og:title" content="leantokens · cut the tokens your AI agent spends">
+<meta property="og:description" content="Compress the tool output Claude Code, Codex and LLM apps send to the model. JSON tables, log cleanup, repeat pointers. Open source, one Python file.">
+<meta property="og:url" content="https://leantokens.vercel.app/">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#10162a">
+
 <meta name="description" content="leantokens cuts the tokens Claude Code, Codex and LLM apps spend by compressing tool output before it reaches the model. Open source, one Python file.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%232d4bd8%22/%3E%3Cpath d=%22M9 9v14h14%22 stroke=%22white%22 stroke-width=%223.5%22 fill=%22none%22/%3E%3C/svg%3E">
 
@@ -22,6 +31,7 @@
       <h1>Your agent reads <s>everything</s> what matters.</h1>
       <p>Coding agents burn most of their tokens re-reading tool output: JSON from APIs, logs, file reads. leantokens sits between the agent and the model and shrinks that output before it is sent. You keep using Claude Code or Codex exactly as before.</p>
       <div class="cmd"><code>leantokens <b>wrap claude</b></code><button id="copy-hero" data-copy="leantokens wrap claude">Copy</button></div>
+      <p class="first">First install it: <code>pip install git+https://github.com/divyanshus2404/leantokens</code> · <a href="/docs/#quickstart">Quick start</a></p>
       <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Codex CLI</span><span>Aider</span><span>Anthropic SDK</span><span>OpenAI SDK</span></div>
     </div>
     <div class="trace" aria-label="Example session">
@@ -45,13 +55,79 @@
     <section>
       <div class="head">
         <span class="eyebrow">How it saves</span>
-        <h2>Same answers, smaller context.</h2>
+        <h2>Smaller context. Nothing dropped.</h2>
       </div>
       <div class="facts">
         <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once, the values as rows, and any value shared by every row just once. It rebuilds to the exact original.</p></div>
         <div><h3>Repeats become pointers</h3><p>Agents re-read the same file and rerun the same tests. A tool result identical to an earlier one becomes a one-line pointer to it.</p></div>
         <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Terminal color codes, trailing spaces and runs of blank lines go.</p></div>
         <div><h3>Prompt caching keeps working</h3><p>The same tool output always compresses to the same bytes and earlier turns never change, so Anthropic and OpenAI cache hits still land.</p></div>
+      </div>
+    </section>
+
+    <section id="results">
+      <div class="head">
+        <span class="eyebrow">Measured</span>
+        <h2>How much it saves depends on what your agent reads.</h2>
+        <p class="lede">Data and logs shrink a lot. Source code is left exactly as written, so code-heavy sessions save less. Counted with OpenAI's o200k tokenizer.</p>
+      </div>
+      <div class="results">
+        <div class="res">
+          <div class="res-head"><b>92%</b><span>fewer tokens</span></div>
+          <div class="meter" aria-hidden="true"><i style="width:92%"></i></div>
+          <p>One API response: 30 order records as JSON, 1,112 → 90 tokens.</p>
+        </div>
+        <div class="res">
+          <div class="res-head"><b>60%</b><span>fewer tokens</span></div>
+          <div class="meter" aria-hidden="true"><i style="width:60%"></i></div>
+          <p>A test session heavy on data: an API result fetched twice, 120 log lines, a file and a test run each repeated. 18,466 → 7,304 tokens.</p>
+        </div>
+        <div class="res">
+          <div class="res-head"><b>14%</b><span>smaller context on average</span></div>
+          <div class="meter" aria-hidden="true"><i style="width:14%"></i></div>
+          <p>400 real coding-agent sessions from the public SWE-agent dataset, mostly reading and editing source code. One session in ten saved about 30%.</p>
+        </div>
+      </div>
+      <p class="note">Your own numbers: <code>leantokens stats</code> reports what Anthropic or OpenAI actually billed and what was saved.</p>
+    </section>
+
+    <section id="examples">
+      <div class="head">
+        <span class="eyebrow">What the model receives</span>
+        <h2>Before and after, from the real tool.</h2>
+      </div>
+      <div class="compare">
+        <div class="pair">
+          <h3>API response</h3>
+          <div class="ba"><span class="tag">before · 479 characters</span><pre>[
+  {"id": 4101, "customer": "Ana Ruiz", "status": "shipped",
+   "carrier": "DHL", "total": 18.5},
+  {"id": 4102, "customer": "Ben Okafor", "status": "shipped",
+   "carrier": "DHL", "total": 42.0},
+  ... 2 more rows
+]</pre></div>
+          <div class="ba"><span class="tag after">after · 187 characters</span><pre>{"_cols":["id","customer","total"],
+ "_rows":[[4101,"Ana Ruiz",18.5],[4102,"Ben Okafor",42.0],
+          [4103,"Chen Wei",9.99],[4104,"Dara Singh",61.25]],
+ "_same":{"status":"shipped","carrier":"DHL"}}</pre></div>
+          <p>Keys once, rows as values, shared values once. Rebuilds to the exact original.</p>
+        </div>
+        <div class="pair">
+          <h3>Server log</h3>
+          <div class="ba"><span class="tag">before · 25 lines</span><pre>INFO  GET /api/health 200 3ms
+INFO  GET /api/health 200 3ms
+... 22 more identical lines
+ERROR POST /api/checkout 500: payment timeout</pre></div>
+          <div class="ba"><span class="tag after">after · 2 lines</span><pre>INFO  GET /api/health 200 3ms  [x24]
+ERROR POST /api/checkout 500: payment timeout</pre></div>
+          <p>Repeats become a count. The error is untouched.</p>
+        </div>
+        <div class="pair">
+          <h3>Same test run, twice</h3>
+          <div class="ba"><span class="tag">before</span><pre>(the full test output, sent again)</pre></div>
+          <div class="ba"><span class="tag after">after</span><pre>[Same output as tool call toolu_01 above.]</pre></div>
+          <p>The first copy is still in the conversation, so nothing is lost.</p>
+        </div>
       </div>
     </section>
 
@@ -164,6 +240,21 @@ pbpaste &gt; leantokens.py<button class="copy" data-copy="pbpaste > leantokens.p
         <summary>Read the script before you run it</summary>
         <pre id="script-view">Loading…</pre>
       </details>
+    </section>
+
+    <section id="faq">
+      <div class="head">
+        <span class="eyebrow">Questions</span>
+        <h2>Before you try it.</h2>
+      </div>
+      <div class="faq">
+        <details><summary>Does it change the model's answers?</summary><p>The default rules are lossless: every compressed result can be rebuilt exactly, or points to an identical copy already in the conversation. Whether a model behaves the same on your work is something you can check: <code>leantokens eval</code> replays your recorded requests with and without compression and compares the answers.</p></details>
+        <details><summary>Is my API key or Claude sign-in safe?</summary><p>The proxy runs only on your computer, listens on 127.0.0.1, and passes credentials straight to Anthropic or OpenAI. They are never stored or logged.</p></details>
+        <details><summary>Does it break prompt caching?</summary><p>No. Compression is deterministic and never rewrites earlier turns, so each request still begins with the same bytes as the last one and cache hits keep landing.</p></details>
+        <details><summary>Does it work with claude.ai or chatgpt.com?</summary><p>Those sites talk directly to their own servers, so no proxy can sit in between. You can compress text before pasting it: <code>pbpaste | leantokens - -l high | pbcopy</code> on macOS.</p></details>
+        <details><summary>What if something goes wrong?</summary><p>Run without it: plain <code>claude</code> works exactly as before. leantokens changes nothing on your system; it only sets a base URL for the agent it launches.</p></details>
+        <details><summary>What does it cost?</summary><p>Nothing. It's MIT-licensed, one Python file, no account and no telemetry.</p></details>
+      </div>
     </section>
 
     <section id="limits">
