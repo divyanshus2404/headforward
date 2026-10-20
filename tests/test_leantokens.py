@@ -409,6 +409,31 @@ class DesktopTests(unittest.TestCase):
             self.assertTrue(lt._set_base_url(path, None))
             self.assertEqual(json.load(open(path)), {"model": "opus", "env": {"BASH_MAX_OUTPUT_LENGTH": "30000"}})
 
+    def test_on_chains_in_front_of_existing_gateway_and_off_restores_it(self):
+        gateway = "http://127.0.0.1:17322"
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, ".claude", "settings.local.json")
+            os.makedirs(os.path.dirname(path))
+            with open(path, "w") as f:
+                json.dump({"env": {"ANTHROPIC_BASE_URL": gateway, "X": "1"}}, f)
+            saved = (lt.DESKTOP_PLIST, lt.DESKTOP_STATE, lt._launchctl, lt._healthy, sys.platform)
+            lt.DESKTOP_PLIST = os.path.join(d, "agent.plist")
+            lt.DESKTOP_STATE = os.path.join(d, "desktop.json")
+            lt._launchctl = lambda *a: lt.subprocess.CompletedProcess(a, 0, "", "")
+            lt._healthy = lambda timeout=1.0: True
+            sys.platform = "darwin"
+            try:
+                self.assertEqual(lt.desktop_on(d, []), path)
+                self.assertEqual(json.load(open(path))["env"]["ANTHROPIC_BASE_URL"], lt.DESKTOP_URL)
+                plist = open(lt.DESKTOP_PLIST).read()
+                self.assertIn("<string>--upstream</string>\n    <string>%s</string>" % gateway, plist)
+                lt.desktop_on(d, [])  # running it again keeps the chain
+                self.assertIn(gateway, open(lt.DESKTOP_PLIST).read())
+                self.assertEqual(lt.desktop_off(), [path])
+                self.assertEqual(json.load(open(path)), {"env": {"ANTHROPIC_BASE_URL": gateway, "X": "1"}})
+            finally:
+                lt.DESKTOP_PLIST, lt.DESKTOP_STATE, lt._launchctl, lt._healthy, sys.platform = saved
+
     def test_never_overwrites_another_base_url(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "settings.json")
@@ -715,6 +740,14 @@ class WrapTests(unittest.TestCase):
         self.assertIn("compressing claude (smart)", err.getvalue())
         self.assertIn("this session", err.getvalue())
         self.assertNotIn("not signed in", err.getvalue())
+
+    def test_settings_base_url_project_beats_user(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, ".claude"))
+            self.assertIsNone(lt._get_base_url(os.path.join(tmp, ".claude", "settings.local.json")))
+            with open(os.path.join(tmp, ".claude", "settings.local.json"), "w") as f:
+                json.dump({"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:17322"}}, f)
+            self.assertEqual(lt._claude_settings_base_url(tmp), "http://127.0.0.1:17322")
 
     def test_missing_agent(self):
         err = io.StringIO()

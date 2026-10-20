@@ -909,6 +909,26 @@ def _run_agent(cmd, env):
         signal.signal(signal.SIGINT, old)
 
 
+def _get_base_url(path):
+    """ANTHROPIC_BASE_URL in one Claude Code settings file, or None."""
+    try:
+        with open(path) as f:
+            return (json.load(f).get("env") or {}).get("ANTHROPIC_BASE_URL")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _claude_settings_base_url(cwd=None):
+    """ANTHROPIC_BASE_URL from Claude Code settings files (user, then project), or None."""
+    cwd = cwd or os.getcwd()
+    found = None
+    for path in (os.path.join(os.path.expanduser("~"), ".claude", "settings.json"),
+                 os.path.join(cwd, ".claude", "settings.json"),
+                 os.path.join(cwd, ".claude", "settings.local.json")):
+        found = _get_base_url(path) or found
+    return found
+
+
 def cmd_wrap(argv, upstream=None):
     lossy, argv = _flag(argv, "--lossy")
     smart, argv = _flag(argv, "--smart")
@@ -944,7 +964,7 @@ def cmd_wrap(argv, upstream=None):
     env[var] = url + suffix
     if agent == "aider":
         env["ANTHROPIC_BASE_URL"] = url
-    mode = " + ".join(m for m, on in (("smart", smart), ("lossy", lossy), ("cache", cache)) if on) or "lossless"
+    mode =" + ".join(m for m, on in (("smart", smart), ("lossy", lossy), ("cache", cache)) if on) or "lossless"
     print("leantokens: compressing %s (%s). Savings print when it exits; `leantokens stats` for totals."
           % (agent, mode), file=sys.stderr)
     try:
@@ -1200,6 +1220,14 @@ def cmd_doctor(argv):
                      "unset ANTHROPIC_BASE_URL, or start that proxy; `leantokens wrap claude` needs neither")
         else:
             _ok("ANTHROPIC_BASE_URL is %s; leantokens forwards there" % base)
+    configured = _claude_settings_base_url()
+    if configured and base and base.rstrip("/") != configured.rstrip("/"):
+        # The environment beats the env block in Claude Code's settings.json.
+        problems += 1
+        _bad("your shell's ANTHROPIC_BASE_URL=%s overrides Claude Code settings (%s)" % (base, configured),
+             "unset ANTHROPIC_BASE_URL in this shell if you want Claude Code to use %s" % configured)
+    elif configured and configured.rstrip("/") == DESKTOP_URL:
+        _ok("Claude Code uses the leantokens background proxy (%s)" % DESKTOP_URL)
 
     srv = None
     try:
@@ -1954,8 +1982,12 @@ def _settings_path(target):
     return os.path.join(os.path.abspath(os.path.expanduser(target)), ".claude", "settings.local.json")
 
 
-def _set_base_url(path, url):
-    """Set (url) or remove (None) ANTHROPIC_BASE_URL in a Claude Code settings file."""
+def _set_base_url(path, url, previous=None):
+    """Set (url) or remove (None) ANTHROPIC_BASE_URL in a Claude Code settings file.
+
+    previous is a gateway URL the background proxy forwards to: setting may
+    replace it, and removing puts it back.
+    """
     try:
         with open(path) as f:
             data = json.load(f)
@@ -1965,15 +1997,18 @@ def _set_base_url(path, url):
         raise RuntimeError("%s is not valid JSON; fix it first" % path)
     env = data.setdefault("env", {})
     if url:
-        if env.get("ANTHROPIC_BASE_URL") not in (None, url):
+        if env.get("ANTHROPIC_BASE_URL") not in (None, url, previous):
             raise RuntimeError("%s already sets ANTHROPIC_BASE_URL=%s; leaving it alone" % (path, env["ANTHROPIC_BASE_URL"]))
         env["ANTHROPIC_BASE_URL"] = url
     else:
         if env.get("ANTHROPIC_BASE_URL") != DESKTOP_URL:
             return False
-        del env["ANTHROPIC_BASE_URL"]
-        if not env:
-            del data["env"]
+        if previous:
+            env["ANTHROPIC_BASE_URL"] = previous
+        else:
+            del env["ANTHROPIC_BASE_URL"]
+            if not env:
+                del data["env"]
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path):
         shutil.copy2(path, path + ".bak")
@@ -1986,9 +2021,19 @@ def _set_base_url(path, url):
 def desktop_on(target, mode_args):
     if sys.platform != "darwin":
         raise RuntimeError("`leantokens desktop` uses macOS launchd; on other systems run `leantokens proxy` yourself")
+    path = _settings_path(target)
+    state = _desktop_state()
+    chained = state.get("upstream")
+    current = _get_base_url(path)
+    if current and current.rstrip("/") != DESKTOP_URL:
+        # Another gateway is set (a company or routing proxy): sit in front of it.
+        if chained and chained != current:
+            raise RuntimeError("%s sets ANTHROPIC_BASE_URL=%s, but the background proxy already forwards to %s; "
+                               "leaving it alone" % (path, current, chained))
+        chained = current
     os.makedirs(os.path.dirname(DESKTOP_PLIST), exist_ok=True)
     with open(DESKTOP_PLIST, "w") as f:
-        f.write(_plist(mode_args))
+        f.write(_plist(mode_args + (["--upstream", chained] if chained else [])))
     domain = "gui/%d" % os.getuid()
     _launchctl("bootout", domain + "/" + DESKTOP_LABEL)
     r = _launchctl("bootstrap", domain, DESKTOP_PLIST)
@@ -1999,11 +2044,13 @@ def desktop_on(target, mode_args):
     else:
         raise RuntimeError("the background proxy did not start (launchctl: %s). See ~/.leantokens/proxy.log"
                            % (r.stderr.strip() or "no error"))
-    path = _settings_path(target)
-    _set_base_url(path, DESKTOP_URL)
-    state = _desktop_state()
+    _set_base_url(path, DESKTOP_URL, chained)
     if path not in state["settings"]:
         state["settings"].append(path)
+    if current and current.rstrip("/") != DESKTOP_URL:
+        state.setdefault("previous", {})[path] = current
+    if chained:
+        state["upstream"] = chained
     state["mode"] = mode_args
     _save_desktop_state(state)
     return path
@@ -2011,7 +2058,8 @@ def desktop_on(target, mode_args):
 
 def desktop_off():
     state = _desktop_state()
-    changed = [p for p in state.get("settings", []) if _set_base_url(p, None)]
+    previous = state.get("previous", {})
+    changed = [p for p in state.get("settings", []) if _set_base_url(p, None, previous.get(p))]
     if sys.platform == "darwin":
         _launchctl("bootout", "gui/%d/%s" % (os.getuid(), DESKTOP_LABEL))
     if os.path.exists(DESKTOP_PLIST):
@@ -2034,15 +2082,17 @@ def cmd_desktop(argv):
         except RuntimeError as e:
             print("leantokens: %s" % e, file=sys.stderr)
             return 1
+        up = _desktop_state().get("upstream")
         print("On. The background proxy runs at %s and starts at login.\n"
-              "Claude Code now uses it via %s.\n"
+              "Claude Code now uses it via %s.\n" % (DESKTOP_URL, path)
+              + ("Chain: Claude Code -> leantokens -> %s\n" % up if up else "") +
               "Start a new Claude Code session (existing ones keep their old settings).\n"
-              "Undo everything: leantokens desktop off" % (DESKTOP_URL, path))
+              "Undo everything: leantokens desktop off")
         return 0
     if a.action == "off":
         changed = desktop_off()
         print("Off. Background proxy stopped and removed.%s" % (
-            "" if not changed else "\nRemoved ANTHROPIC_BASE_URL from:\n  " + "\n  ".join(changed)))
+            "" if not changed else "\nRestored ANTHROPIC_BASE_URL in:\n  " + "\n  ".join(changed)))
         print("Start a new Claude Code session to go back to connecting directly.")
         return 0
     state = _desktop_state()
@@ -2052,6 +2102,8 @@ def cmd_desktop(argv):
                                                       "will fail; run `leantokens desktop on` or `off`)"
                                                       if os.path.exists(DESKTOP_PLIST) else "")))
     print("mode: %s" % (" ".join(state.get("mode") or []) or "lossless"))
+    if state.get("upstream"):
+        print("forwards to: %s" % state["upstream"])
     for p in state.get("settings", []):
         print("used by: %s" % p)
     if not state.get("settings"):
