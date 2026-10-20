@@ -51,6 +51,7 @@
   --band: #070a12; --band-2: #0e1324; --band-line: #1d2540; --term-bg: #0a0e17; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font: 400 1rem/1.6 var(--body); }
 .in {
   max-width: 1140px; margin: 0 auto;
@@ -89,6 +90,7 @@ button { font-family: var(--body); }
 .shot { background: var(--term-bg); border: 1px solid var(--band-line); border-radius: 14px; overflow: hidden; min-width: 0; box-shadow: 0 30px 80px -30px #000; }
 .shot .top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--band-line); color: var(--band-muted); font: 500 0.74rem var(--mono); }
 .shot .top i { width: 10px; height: 10px; border-radius: 50%; background: var(--band-line); }
+.shot .top .badge { font-style: normal; color: var(--band-keep); border: 1px solid var(--band-line); padding: 1px 7px; border-radius: 99px; }
 .shot .top span { margin-left: 6px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log { padding: 14px 16px 6px; font: 400 0.8rem/1.75 var(--mono); color: var(--term-fg); overflow-x: auto; }
 .log div { white-space: nowrap; }
@@ -97,14 +99,14 @@ button { font-family: var(--body); }
 .log .k { color: var(--band-keep); }
 .log .d { color: var(--term-dim); }
 .meter { display: grid; gap: 10px; padding: 14px 16px 18px; border-top: 1px dashed var(--band-line); }
-.meter .row { display: grid; grid-template-columns: 9ch 1fr auto; gap: 12px; align-items: center; font: 500 0.75rem var(--mono); color: var(--band-muted); }
+.meter .row { display: grid; grid-template-columns: 11ch 1fr auto; gap: 12px; align-items: center; font: 500 0.75rem var(--mono); color: var(--band-muted); }
 .meter .track { height: 8px; background: var(--band-2); border-radius: 4px; overflow: hidden; }
 .meter .track b { display: block; height: 100%; border-radius: 4px; }
 .meter .raw b { width: 100%; background: var(--band-cut); }
 .meter .lean b { width: 0.6%; min-width: 4px; background: var(--band-keep); }
 .meter .n { font-variant-numeric: tabular-nums; color: var(--band-ink); }
 .meter .sum { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.meter .sum strong { font: 800 2.2rem/1 var(--display); color: var(--band-ink); letter-spacing: -0.02em; }
+.meter .sum strong { font: 800 2rem/1 var(--display); font-variant-numeric: tabular-nums; color: var(--band-ink); letter-spacing: -0.02em; }
 .meter .sum span { font: 400 0.78rem/1.4 var(--mono); color: var(--band-muted); }
 
 /* ---------- Main ---------- */
@@ -198,8 +200,8 @@ details { border: 1px solid var(--line); border-radius: 12px; background: var(--
 summary { cursor: pointer; padding: 12px 16px; font-weight: 600; }
 details pre { margin: 0; padding: 0 16px 16px; max-height: 420px; overflow: auto; font: 400 0.76rem/1.5 var(--mono); }
 .limits { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
-.limits li { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; color: var(--muted); font-size: 0.95rem; display: grid; gap: 4px; align-content: start; }
-.limits b { color: var(--ink); font-weight: 600; }
+.limits li { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; color: var(--muted); font-size: 0.95rem; }
+.limits b { display: block; margin-bottom: 4px; color: var(--ink); font-weight: 600; }
 footer { border-top: 1px solid var(--line); }
 footer .in { padding-block: 24px 32px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; color: var(--muted); font-size: 0.85rem; }
 
@@ -217,7 +219,7 @@ footer .in { padding-block: 24px 32px; display: flex; flex-wrap: wrap; gap: 8px 
   textarea, .out { min-height: 220px; }
   .chain { padding: 18px; }
 }
-@media (max-width: 420px) { .hops { grid-template-columns: 1fr; } }
+@media (max-width: 420px) { .hops { grid-template-columns: 1fr; } .cmd code { white-space: normal; overflow-wrap: anywhere; } }
 @media (prefers-reduced-motion: no-preference) {
   .meter .raw b { animation: grow 0.9s cubic-bezier(.2,.7,.2,1) both; }
   .meter .lean b { animation: grow 0.9s 0.5s cubic-bezier(.2,.7,.2,1) both; }
@@ -230,27 +232,27 @@ footer .in { padding-block: 24px 32px; display: flex; flex-wrap: wrap; gap: 8px 
 <header class="hero">
   <div class="in">
     <div class="copy">
-      <span class="eyebrow">leantokens · open source · one Python file</span>
+      <span class="eyebrow">leantokens &middot; open source &middot; one Python file</span>
       <h1>Your agent reads <s>everything</s> <em>what matters.</em></h1>
       <p>Coding agents spend most of their tokens re-reading tool output: build logs, test runs, JSON, file reads. leantokens shrinks that output before the model sees it. You keep using Claude Code exactly as before.</p>
       <div class="cmd"><code><i>$</i> leantokens <b>hooks install global</b></code><button id="copy-hero" data-copy="leantokens hooks install global">Copy</button></div>
       <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Claude desktop app</span><span>Codex CLI</span><span>Aider</span><span>Anthropic &amp; OpenAI SDKs</span></div>
     </div>
     <figure class="shot" aria-label="A real build log before and after leantokens" style="margin:0">
-      <div class="top"><i></i><i></i><i></i><span>Claude Code · Bash(make) · hook filter on</span></div>
+      <div class="top"><i></i><i></i><i></i><span>Claude Code &middot; Bash(make) &middot; hook filter on</span><em class="badge">best case</em></div>
       <div class="log">
         <div><span class="p">$</span> make</div>
         <div class="x">compiling module...</div>
         <div class="x">compiling module...</div>
         <div class="x">compiling module...</div>
-        <div class="d">  … 296 more identical lines</div>
+        <div class="d">  &hellip; 296 more identical lines</div>
         <div class="k">compiling module...  [x300]</div>
         <div class="k">BUILD OK: 300 modules</div>
       </div>
       <div class="meter">
         <div class="row raw"><span>raw</span><div class="track"><b></b></div><span class="n">8,722 chars</span></div>
         <div class="row lean"><span>model sees</span><div class="track"><b></b></div><span class="n">50 chars</span></div>
-        <div class="sum"><strong>99.4% less</strong><span>measured on a real Claude Code run.<br>Errors are always kept.</span></div>
+        <div class="sum"><strong>8,722 &rarr; 50</strong><span>characters on a repetitive build log.<br>Mixed real output: about 12% smaller.</span></div>
       </div>
     </figure>
   </div>
@@ -289,10 +291,10 @@ footer .in { padding-block: 24px 32px; display: flex; flex-wrap: wrap; gap: 8px 
         <table class="matrix">
           <thead><tr><th scope="col">Where Claude runs</th><th scope="col">Hooks</th><th scope="col">Always-on proxy</th><th scope="col">Wrap</th></tr></thead>
           <tbody>
-            <tr><th scope="row">Claude Code in a terminal</th><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td><td><span class="yes">✓ works</span></td></tr>
-            <tr><th scope="row">Claude Code in the desktop app</th><td><span class="yes">✓ works</span></td><td><span class="no">– ignores base URL</span></td><td><span class="no">– not launchable</span></td></tr>
-            <tr><th scope="row">Codex CLI, Aider</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="yes">✓ works</span></td></tr>
-            <tr><th scope="row">Your own SDK code</th><td><span class="no">– Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="no">–</span></td></tr>
+            <tr><th scope="row">Claude Code in a terminal</th><td><span class="yes">&#10003; works</span></td><td><span class="yes">&#10003; works</span></td><td><span class="yes">&#10003; works</span></td></tr>
+            <tr><th scope="row">Claude Code in the desktop app</th><td><span class="yes">&#10003; works</span></td><td><span class="no">&ndash; ignores base URL</span></td><td><span class="no">&ndash; not launchable</span></td></tr>
+            <tr><th scope="row">Codex CLI, Aider</th><td><span class="no">&ndash; Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="yes">&#10003; works</span></td></tr>
+            <tr><th scope="row">Your own SDK code</th><td><span class="no">&ndash; Claude only</span></td><td><span class="part">set the URL yourself</span></td><td><span class="no">&ndash;</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -300,7 +302,7 @@ footer .in { padding-block: 24px 32px; display: flex; flex-wrap: wrap; gap: 8px 
 
     <section id="chain">
       <div class="head">
-        <span class="eyebrow">New · gateway chaining</span>
+        <span class="eyebrow">New &middot; gateway chaining</span>
         <h2>Already using a gateway? leantokens goes in front of it.</h2>
         <p class="lede">If your Claude Code settings already point <code>ANTHROPIC_BASE_URL</code> at a router, cost tracker or company proxy, <code>desktop on</code> no longer refuses. It takes that URL as its upstream, so nothing you rely on is skipped.</p>
       </div>
@@ -335,8 +337,8 @@ leantokens desktop off</div>
         <h2>Same answers, smaller context.</h2>
       </div>
       <div class="facts">
-        <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Progress bars, color codes and runs of blank lines go. Error lines are always kept.</p><p class="ex"><s>PASS test_a … PASS test_z</s> → <ins>PASS  [x26]</ins></p></div>
-        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once and the values as rows. It rebuilds to the exact original.</p><p class="ex"><s>{"id":1,"status":"paid"},{"id":2,…</s> → <ins>id|status</ins></p></div>
+        <div><h3>Logs lose the noise</h3><p>Repeated lines collapse to one with a count. Progress bars, color codes and runs of blank lines go. Error lines are always kept.</p><p class="ex"><s>PASS test_a &hellip; PASS test_z</s> &rarr; <ins>PASS  [x26]</ins></p></div>
+        <div><h3>JSON becomes a table</h3><p>Lists of same-shaped objects repeat every key on every row. leantokens writes the keys once and the values as rows. It rebuilds to the exact original.</p><p class="ex"><s>{"id":1,"status":"paid"},{"id":2,&hellip;</s> &rarr; <ins>id|status</ins></p></div>
         <div><h3>Repeats become pointers</h3><p>Agents re-read the same file and rerun the same tests. A tool result identical to an earlier one becomes a one-line pointer to it.</p></div>
         <div><h3>Prompt caching keeps working</h3><p>The same output always compresses to the same bytes and earlier turns never change, so cache hits still land.</p></div>
       </div>
@@ -414,7 +416,7 @@ leantokens desktop off</div>
       </ol>
       <details>
         <summary>Read the script before you run it</summary>
-        <pre id="script-view">Loading…</pre>
+        <pre id="script-view">Loading&hellip;</pre>
       </details>
     </section>
 
@@ -425,6 +427,8 @@ leantokens desktop off</div>
       </div>
       <ul class="limits">
         <li><b>It only touches tool output.</b> Your messages and the system prompt reach the model unchanged.</li>
+        <li><b>It never stores your keys.</b> Sign-in and API keys pass straight through to the provider. Everything runs on your machine.</li>
+        <li><b>History is the bigger cost.</b> Every reply resends the whole conversation. <code>/clear</code> between tasks and <code>/compact</code> in long sessions save more than any filter.</li>
         <li><b>Savings depend on the work.</b> Log-heavy and JSON-heavy sessions save the most. Reading source code saves little, because code is left as written.</li>
         <li><b>The desktop app skips the proxy.</b> Its Code sessions ignore <code>ANTHROPIC_BASE_URL</code>. Use hooks there.</li>
         <li><b>A shell variable wins.</b> <code>ANTHROPIC_BASE_URL</code> exported in your shell overrides Claude Code settings, including the always-on proxy.</li>
@@ -434,7 +438,7 @@ leantokens desktop off</div>
     </section>
   </div>
 </main>
-<footer><div class="in"><span>leantokens · MIT licensed · one file, no dependencies</span><span>Undo anything: <code>leantokens hooks uninstall global</code> · <code>leantokens desktop off</code></span></div></footer>
+<footer><div class="in"><span>leantokens &middot; MIT licensed &middot; one file, no dependencies</span><span>Undo anything: <code>leantokens hooks uninstall global</code> &middot; <code>leantokens desktop off</code></span></div></footer>
 <script>
 const LEVELS = ["light", "medium", "high", "max"];
 const CODE = /(```[^\n]*\n[\s\S]*?```|`[^`\n]+`)/g;
