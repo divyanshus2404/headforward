@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "headforward"
-version = "0.3.0"
+dynamic = ["version"]
 description = "Cut the tokens Claude Code, Codex and LLM apps spend: compresses tool output, JSON and logs through a local proxy."
 readme = "README.md"
 license = { text = "MIT" }
@@ -40,3 +40,6 @@ leantokens = "headforward:main"  # the old name, kept so existing scripts keep w
 
 [tool.setuptools]
 py-modules = ["headforward"]
+
+[tool.setuptools.dynamic]
+version = { attr = "headforward.__version__" }

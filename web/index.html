@@ -30,8 +30,8 @@
       <span class="eyebrow">open source · one Python file · runs on your machine</span>
       <h1>Your agent reads <s>everything</s> what matters.</h1>
       <p>Coding agents spend most of their tokens re-reading tool output: test runs, build logs, git output, JSON. headforward shrinks that output before the model sees it. Errors are always kept, and you keep using Claude Code exactly as before.</p>
-      <div class="cmd"><code>headforward <b>hooks install global</b></code><button id="copy-hero" data-copy="headforward hooks install global">Copy</button></div>
-      <p class="first">First install it: <code>pip install headforward</code> · <a href="/docs/#quickstart">Quick start</a></p>
+      <div class="cmd"><code>curl -fsSL <b>headforward.vercel.app/<wbr>install.sh</b> | sh</code><button id="copy-hero" data-copy="curl -fsSL https://headforward.vercel.app/install.sh | sh">Copy</button></div>
+      <p class="first">Then turn it on: <code>headforward hooks install global</code> · <a href="#install">Other ways to install</a></p>
       <div class="agents" aria-label="Works with"><span>Claude Code</span><span>Claude desktop app</span><span>Codex CLI</span><span>Aider</span><span>Anthropic &amp; OpenAI SDKs</span></div>
     </div>
     <div class="trace" aria-label="A real build log before and after headforward">
@@ -266,17 +266,15 @@ headforward desktop off</div>
       <div class="head">
         <span class="eyebrow">Install</span>
         <h2>One command. No dependencies.</h2>
-        <p class="lede">Python 3.9 or newer on macOS, Linux or Windows.</p>
+        <p class="lede">Needs Python 3.9 or newer. Installs one file into your home folder: no sudo, no pip, nothing else.</p>
       </div>
       <ol class="steps">
         <li><div>
-          <p>Install from PyPI.</p>
-          <div class="term has-copy">pip install headforward<button class="copy" data-copy="pip install headforward">Copy</button></div>
-          <p class="note">No pip? Copy the script instead, save it as <code>headforward.py</code>, and run <code>python3 headforward.py</code> wherever this page says <code>headforward</code>.</p>
-          <div><button class="btn primary" id="copy-script">Copy headforward.py</button></div>
-          <div class="term has-copy"><span class="c"># macOS: save what you just copied</span>
-pbpaste &gt; headforward.py<button class="copy" data-copy="pbpaste > headforward.py">Copy</button></div>
-          <p class="note">Linux: <code>xclip -o -sel clip &gt; headforward.py</code>. Windows: paste into Notepad and save as <code>headforward.py</code>.</p>
+          <p>Install it on macOS or Linux. Run the same line again any time to update.</p>
+          <div class="term has-copy">curl -fsSL https://headforward.vercel.app/install.sh | sh<button class="copy" data-copy="curl -fsSL https://headforward.vercel.app/install.sh | sh">Copy</button></div>
+          <p class="note">Windows, or prefer a Python tool manager? Either of these works everywhere:</p>
+          <div class="term has-copy">uv tool install git+https://github.com/divyanshus2404/headforward<button class="copy" data-copy="uv tool install git+https://github.com/divyanshus2404/headforward">Copy</button></div>
+          <div class="term has-copy">pipx install git+https://github.com/divyanshus2404/headforward<button class="copy" data-copy="pipx install git+https://github.com/divyanshus2404/headforward">Copy</button></div>
         </div></li>
         <li><div>
           <p>Turn on the hook, then start a new Claude Code session.</p>
@@ -287,12 +285,13 @@ pbpaste &gt; headforward.py<button class="copy" data-copy="pbpaste > headforward
           <div class="term has-copy">headforward doctor<button class="copy" data-copy="headforward doctor">Copy</button></div>
         </div></li>
         <li><div>
-          <p>Optional: exact token counts.</p>
-          <div class="term has-copy">pip install "headforward[exact]"<button class="copy" data-copy='pip install "headforward[exact]"'>Copy</button></div>
+          <p>Optional: exact token counts for OpenAI models (installed with uv).</p>
+          <div class="term has-copy">uv tool install --with tiktoken git+https://github.com/divyanshus2404/headforward<button class="copy" data-copy="uv tool install --with tiktoken git+https://github.com/divyanshus2404/headforward">Copy</button></div>
         </div></li>
       </ol>
       <details>
-        <summary>Read the script before you run it</summary>
+        <summary>Read the installer before you run it</summary>
+        <p class="note">It checks for Python, downloads <a href="/headforward.py">headforward.py</a>, confirms it runs, then puts it in <code>~/.local/share/headforward</code> with a <code>headforward</code> command in <code>~/.local/bin</code>. It adds that folder to your shell's PATH if needed and changes nothing else.</p>
         <pre id="script-view">Loading…</pre>
       </details>
     </section>
@@ -309,6 +308,7 @@ pbpaste &gt; headforward.py<button class="copy" data-copy="pbpaste > headforward
         <details><summary>Does it work with claude.ai or chatgpt.com?</summary><p>Those sites talk directly to their own servers, so no proxy can sit in between. You can compress text before pasting it: <code>pbpaste | headforward - -l high | pbcopy</code> on macOS.</p></details>
         <details><summary>How do I know it's working?</summary><p>In a new Claude Code session, run something noisy like your tests. Shortened output carries a line such as <code>[40 passing test lines omitted; full output: headforward show ID]</code>. <code>headforward stats</code> counts every request it touched.</p></details>
         <details><summary>What if something goes wrong?</summary><p>Undo it in one command: <code>headforward hooks uninstall global</code> or <code>headforward desktop off</code>. Both restore your Claude Code settings from a backup, and plain <code>claude</code> works exactly as before.</p></details>
+        <details><summary>How do I update or uninstall it?</summary><p>Update by running the install line again; your hooks and settings keep working. To remove it: <code>headforward hooks uninstall global</code>, <code>headforward desktop off</code>, then <code>rm ~/.local/bin/headforward</code> and <code>rm -rf ~/.local/share/headforward ~/.headforward</code>.</p></details>
         <details><summary>What does it cost?</summary><p>Nothing. It's MIT-licensed, one Python file, no account and no telemetry.</p></details>
       </div>
     </section>
@@ -573,14 +573,9 @@ $("clear").addEventListener("click", () => { src.value = ""; render(); src.focus
 $("copy-out").addEventListener("click", e => copyText(result, e.currentTarget));
 document.querySelectorAll("[data-copy]").forEach(b => b.addEventListener("click", () => copyText(b.dataset.copy, b)));
 
-let script = "";
-fetch("headforward.py").then(r => r.ok ? r.text() : Promise.reject()).then(s => {
-  script = s; $("script-view").textContent = s;
-}).catch(() => { $("script-view").textContent = "Couldn't load the script. Refresh the page to try again."; });
-$("copy-script").addEventListener("click", e => {
-  if (!script) { e.currentTarget.textContent = "Still loading, try again"; return; }
-  copyText(script, e.currentTarget);
-});
+fetch("install.sh").then(r => r.ok ? r.text() : Promise.reject()).then(s => {
+  $("script-view").textContent = s;
+}).catch(() => { $("script-view").textContent = "Couldn't load the installer. Refresh the page to try again."; });
 
 const savedLevel = load("ts-level");
 level = LEVELS.includes(savedLevel) ? savedLevel : "high";

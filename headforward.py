@@ -20,6 +20,8 @@ Prompt levels:
   high    + articles, hedges, markdown emphasis, minify JSON code blocks
   max     + strip comment-only lines and blank lines inside code blocks
 """
+__version__ = "0.3.0"
+
 import argparse
 import datetime
 import difflib
@@ -1454,7 +1456,7 @@ def _bad(msg, fix):
 
 def cmd_doctor(argv):
     """Check everything headforward needs to work with Claude, and say how to fix what isn't."""
-    print("headforward doctor\n")
+    print("headforward doctor (%s)\n" % __version__)
     problems = 0
     if sys.version_info >= (3, 9):
         _ok("Python %d.%d" % sys.version_info[:2])
@@ -1468,7 +1470,8 @@ def cmd_doctor(argv):
     else:
         problems += 1
         _bad("`headforward` is not on your PATH",
-             "pip install the package, or run the file directly: python3 headforward.py ...")
+             "install it with: curl -fsSL %s | sh   (or run the file directly: python3 headforward.py ...)"
+             % INSTALL_URL)
 
     claude = shutil.which("claude")
     if claude:
@@ -1478,7 +1481,10 @@ def cmd_doctor(argv):
             ver = "version unknown"
         _ok("Claude Code installed (%s)" % (ver or "version unknown"))
         signed = _claude_signed_in(dict(os.environ))
-        if signed:
+        if os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "claude-desktop":
+            # Inside the desktop app the sign-in check sees the app's environment, not your terminal's.
+            print("  ? terminal sign-in not checked here; run `headforward doctor` in a terminal for that")
+        elif signed:
             _ok("Claude Code is signed in" if not os.environ.get("ANTHROPIC_API_KEY") else "ANTHROPIC_API_KEY is set")
         elif signed is False:
             problems += 1
@@ -1509,13 +1515,46 @@ def cmd_doctor(argv):
         else:
             _ok("ANTHROPIC_BASE_URL is %s; headforward forwards there" % base)
     configured = _claude_settings_base_url()
-    if configured and base and base.rstrip("/") != configured.rstrip("/"):
+    https_mode = (_read_settings_quiet(_settings_path("global")).get("env") or {}).get("HTTPS_PROXY") == DESKTOP_URL
+    if (configured and base and base.rstrip("/") != configured.rstrip("/") and https_mode
+            and urllib.parse.urlsplit(base).hostname in INTERCEPT):
+        # The desktop app pins ANTHROPIC_BASE_URL; HTTPS_PROXY still routes it through headforward.
+        _ok("ANTHROPIC_BASE_URL is pinned to %s, but HTTPS_PROXY still routes it through headforward" % base)
+    elif configured and base and base.rstrip("/") != configured.rstrip("/"):
         # The environment beats the env block in Claude Code's settings.json.
         problems += 1
         _bad("your shell's ANTHROPIC_BASE_URL=%s overrides Claude Code settings (%s)" % (base, configured),
              "unset ANTHROPIC_BASE_URL in this shell if you want Claude Code to use %s" % configured)
     elif configured and configured.rstrip("/") == DESKTOP_URL:
         _ok("Claude Code uses the headforward background proxy (%s)" % DESKTOP_URL)
+
+    hooks = _installed_hooks()
+    for path, script in hooks:
+        if script and not os.path.exists(script):
+            problems += 1
+            _bad("the hook in %s runs %s, which no longer exists, so it does nothing" % (path, script),
+                 "headforward hooks install %s" % ("global" if path == _settings_path("global") else "."))
+        else:
+            _ok("hook installed (%s)" % path)
+    if not hooks:
+        print("  - hook not installed: `headforward hooks install global` turns it on for every Claude Code session")
+
+    settings_env = (_read_settings_quiet(_settings_path("global")).get("env") or {})
+    uses_proxy = DESKTOP_URL in (settings_env.get("HTTPS_PROXY"), (configured or "").rstrip("/"))
+    if uses_proxy and not _healthy():
+        problems += 1
+        _bad("Claude Code settings use the background proxy at %s, but it isn't running, "
+             "so Claude Code can't connect" % DESKTOP_URL,
+             "headforward desktop on global%s   (or `headforward desktop off` to stop using it)"
+             % (" --https" if settings_env.get("HTTPS_PROXY") == DESKTOP_URL else ""))
+    ca = settings_env.get("NODE_EXTRA_CA_CERTS")
+    if settings_env.get("HTTPS_PROXY") == DESKTOP_URL:
+        if ca and os.path.exists(ca):
+            _ok("desktop app routed through the proxy (--https, trusting %s)" % ca)
+        else:
+            problems += 1
+            _bad("HTTPS mode is on but its certificate %s is missing, so desktop sessions can't connect" % ca,
+                 "headforward desktop on global --https")
 
     srv = None
     try:
@@ -1561,10 +1600,42 @@ def cmd_doctor(argv):
     else:
         print("  - set ANTHROPIC_API_KEY for exact Claude token counts (optional; counting is free)")
 
-    print("\n" + ("All good. Run: headforward wrap claude" if not problems else
-                  "%d problem%s found; fix %s and run `headforward doctor` again."
-                  % (problems, "" if problems == 1 else "s", "it" if problems == 1 else "them")))
+    if problems:
+        print("\n%d problem%s found; fix %s and run `headforward doctor` again."
+              % (problems, "" if problems == 1 else "s", "it" if problems == 1 else "them"))
+    elif not hooks:
+        print("\nAll good. Next: headforward hooks install global, then start a new Claude Code session.")
+    else:
+        print("\nAll good. Start a new Claude Code session; `headforward stats` shows what you save.")
     return 1 if problems else 0
+
+
+def _read_settings_quiet(path):
+    try:
+        return _read_settings(path)
+    except RuntimeError:
+        return {}
+
+
+def _installed_hooks(cwd=None):
+    """(settings file, script it runs) for each headforward hook in user and project settings."""
+    cwd = cwd or os.getcwd()
+    paths = [_settings_path("global")] + [os.path.join(cwd, ".claude", f) for f in ("settings.json",
+                                                                                     "settings.local.json")]
+    found = []
+    for path in dict.fromkeys(paths):
+        hooks = _read_settings_quiet(path).get("hooks")
+        for group in (hooks.get("PreToolUse", []) if isinstance(hooks, dict) else []):
+            for h in group.get("hooks", []):
+                cmd = h.get("command", "")
+                if _is_our_hook(cmd):
+                    try:
+                        parts = shlex.split(cmd)
+                    except ValueError:
+                        parts = []
+                    script = next((a for a in parts if a.endswith(".py")), None)
+                    found.append((path, script))
+    return found
 
 
 def _clipboard_cmds():
@@ -2214,6 +2285,7 @@ def cmd_map(argv):
 # Works for Claude Code in the desktop app, which `wrap` can't reach.
 # ---------------------------------------------------------------------------
 
+INSTALL_URL = "https://headforward.vercel.app/install.sh"
 DESKTOP_LABEL = "com.headforward.proxy"
 DESKTOP_PORT = 8787
 DESKTOP_URL = "http://127.0.0.1:%d" % DESKTOP_PORT
@@ -2739,6 +2811,9 @@ def _use_home(path):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in ("-V", "--version", "version"):
+        print("headforward %s" % __version__)
+        return 0
     _migrate_home()
     if argv and argv[0] in ("-h", "--help", "help"):
         print(USAGE + __doc__)

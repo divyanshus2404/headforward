@@ -21,10 +21,12 @@ Coding agents spend most of their tokens on tool output: test runs, build logs, 
 One Python file. No dependencies. Works on macOS, Linux and Windows.
 
 ```bash
-pip install headforward
+curl -fsSL https://headforward.vercel.app/install.sh | sh
 headforward hooks install global   # every Claude Code session, desktop app included
 headforward doctor                 # checks your setup and says what to fix
 ```
+
+The installer needs only Python 3.9+, and puts one file in your home folder (no sudo, no pip). Run it again to update. On Windows, or with a Python tool manager: `uv tool install git+https://github.com/divyanshus2404/headforward` or `pipx install git+https://github.com/divyanshus2404/headforward`.
 
 Start a new Claude Code session and work as usual. `headforward stats` shows what you saved.
 
@@ -230,9 +232,19 @@ pbpaste | headforward - -l high        # compress a prompt (levels: light, mediu
 - An `ANTHROPIC_BASE_URL` exported in your shell overrides Claude Code settings and bypasses the always-on proxy. `headforward doctor` warns about this.
 - Codex signed in with a ChatGPT account talks to ChatGPT's servers and bypasses the proxy. Use an API key login.
 
-## No pip?
+## Install, update, uninstall
 
-headforward is one file with no dependencies. Download [`headforward.py`](headforward.py) and run `python3 headforward.py` wherever this page says `headforward`. For exact token counts, install `tiktoken` or `pip install "headforward[exact]"`.
+```bash
+curl -fsSL https://headforward.vercel.app/install.sh | sh                  # install or update (macOS, Linux)
+uv tool install git+https://github.com/divyanshus2404/headforward  # any OS
+pipx install git+https://github.com/divyanshus2404/headforward     # any OS
+```
+
+- The installer puts `headforward.py` in `~/.local/share/headforward` and a `headforward` command in `~/.local/bin`, adding that folder to your shell's PATH if needed (`HEADFORWARD_NO_MODIFY_PATH=1` to skip). It changes no Claude Code settings. [Read it](web/install.sh) before running it.
+- Plain `pip install` is blocked on Homebrew and most recent Linux Pythons ("externally-managed-environment"), so these routes avoid it.
+- headforward is one file with no dependencies: `python3 headforward.py` works wherever this page says `headforward`.
+- Exact token counts for OpenAI models: `uv tool install --with tiktoken git+https://github.com/divyanshus2404/headforward`.
+- Uninstall: `headforward hooks uninstall global`, `headforward desktop off`, then `rm ~/.local/bin/headforward` and `rm -rf ~/.local/share/headforward ~/.headforward`.
 
 ## License
 

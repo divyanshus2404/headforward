@@ -1088,6 +1088,90 @@ class RenameTests(unittest.TestCase):
         self.assertIn("headforward", r.stdout)
 
 
+@unittest.skipIf(os.name == "nt", "install.sh is for macOS and Linux")
+class InstallTests(unittest.TestCase):
+    """web/install.sh, run with `sh` (dash on Linux CI) against a local copy of the site."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.web = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web")
+        cls.site = tempfile.TemporaryDirectory()
+        shutil.copy(os.path.join(cls.web, "..", "headforward.py"), os.path.join(cls.site.name, "headforward.py"))
+        with open(os.path.join(cls.site.name, "not-python.html"), "w") as f:
+            f.write("<html>not a script</html>")
+
+        class Quiet(http.server.SimpleHTTPRequestHandler):
+            def __init__(self, *a, **k):
+                super().__init__(*a, directory=cls.site.name, **k)
+
+            def log_message(self, *a):
+                pass
+
+        cls.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.base = "http://127.0.0.1:%d/" % cls.srv.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.site.cleanup()
+
+    def install(self, home, name="headforward.py", shell="/bin/zsh", **extra):
+        env = {"HOME": home, "PATH": os.path.dirname(sys.executable) + os.pathsep + "/usr/bin:/bin",
+               "SHELL": shell, "HEADFORWARD_URL": self.base + name}
+        env.update(extra)
+        return subprocess.run(["sh", os.path.join(self.web, "install.sh")], env=env,
+                              capture_output=True, text=True, timeout=60)
+
+    def test_installs_a_working_command_and_adds_it_to_path(self):
+        with tempfile.TemporaryDirectory() as home:
+            r = self.install(home)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("Installed headforward %s" % hf.__version__, r.stdout)
+            cmd = os.path.join(home, ".local", "bin", "headforward")
+            out = subprocess.run([cmd, "--version"], capture_output=True, text=True, timeout=30).stdout
+            self.assertEqual(out.strip(), "headforward %s" % hf.__version__)
+            profile = open(os.path.join(home, ".zshrc")).read()
+            self.assertIn('export PATH="$HOME/.local/bin:$PATH"', profile)
+            r = self.install(home)  # again: an upgrade in place, profile untouched
+            self.assertIn("Reinstalled", r.stdout)
+            self.assertEqual(open(os.path.join(home, ".zshrc")).read(), profile)
+
+    def test_bash_on_linux_uses_bashrc_and_opt_out_is_respected(self):
+        with tempfile.TemporaryDirectory() as home:
+            r = self.install(home, shell="/bin/bash", HEADFORWARD_NO_MODIFY_PATH="1")
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("is not on your PATH", r.stdout)
+            self.assertFalse(any(os.path.exists(os.path.join(home, f)) for f in (".bashrc", ".bash_profile")))
+
+    def test_bad_download_changes_nothing(self):
+        with tempfile.TemporaryDirectory() as home:
+            r = self.install(home, name="not-python.html")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("nothing was changed", r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(home, ".local")))
+
+
+class VersionDoctorTests(unittest.TestCase):
+    def test_version_flag(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            self.assertEqual(hf.main(["--version"]), 0)
+        self.assertEqual(out.getvalue().strip(), "headforward %s" % hf.__version__)
+
+    def test_doctor_finds_hooks_and_ones_that_point_nowhere(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".claude"))
+            good = hf._self_cmd() + hf.HOOK_MARK
+            gone = "/usr/bin/python3 /no/such/place/leantokens.py hook-bash"
+            with open(os.path.join(d, ".claude", "settings.local.json"), "w") as f:
+                json.dump({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [
+                    {"type": "command", "command": good}, {"type": "command", "command": gone},
+                    {"type": "command", "command": "echo unrelated hook-bash"}]}]}}, f)
+            found = [(p, s) for p, s in hf._installed_hooks(d) if p.startswith(d)]
+            self.assertEqual([s for _, s in found], [os.path.abspath(hf.__file__), "/no/such/place/leantokens.py"])
+
+
 @unittest.skipIf(os.name == "nt", "uses a POSIX stand-in for the claude command")
 class WrapTests(unittest.TestCase):
     def test_wrap_end_to_end(self):
