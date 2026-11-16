@@ -51,11 +51,15 @@
     <p>headforward shrinks the tool output a coding agent reads (test runs, build logs, git output, JSON, file reads) before it reaches the model, so every turn costs fewer input tokens. It runs as a Claude Code hook, a local proxy, or both. Error lines are always kept, anything shortened can be read back, and your own messages are never changed.</p>
 
     <h2 id="install">Install</h2>
-    <p>Requires Python 3.9 or newer on macOS, Linux or Windows. There are no other dependencies.</p>
-    <pre>pip install headforward</pre>
-    <p>Optional, for exact token counts instead of estimates:</p>
-    <pre>pip install "headforward[exact]"</pre>
-    <p class="callout">No pip? headforward is one file. Save <a href="/headforward.py">headforward.py</a> and run <code>python3 headforward.py</code> wherever these docs say <code>headforward</code>.</p>
+    <p>Requires Python 3.9 or newer. There are no other dependencies. On macOS or Linux:</p>
+    <pre>curl -fsSL https://headforward.vercel.app/install.sh | sh</pre>
+    <p>It installs one file, <a href="/headforward.py">headforward.py</a>, into <code>~/.local/share/headforward</code> and a <code>headforward</code> command into <code>~/.local/bin</code>, adding that folder to your shell's PATH if needed. No sudo, no pip, and no Claude Code settings change until you run <code>hooks install</code>. <a href="/install.sh">Read the installer</a> first if you like. Run it again to update.</p>
+    <p>On Windows, or with a Python tool manager:</p>
+    <pre>uv tool install git+https://github.com/divyanshus2404/headforward
+pipx install git+https://github.com/divyanshus2404/headforward</pre>
+    <p>Optional, for exact token counts instead of estimates: <code>uv tool install --with tiktoken git+https://github.com/divyanshus2404/headforward</code>.</p>
+    <p class="callout">headforward is also just one file: <code>python3 headforward.py</code> works wherever these docs say <code>headforward</code>. Plain <code>pip install</code> is blocked on Homebrew and most recent Linux Pythons ("externally-managed-environment"), which is why the options above avoid it.</p>
+    <p>To remove it: <code>headforward hooks uninstall global</code>, <code>headforward desktop off</code>, then <code>rm ~/.local/bin/headforward</code> and <code>rm -rf ~/.local/share/headforward ~/.headforward</code>.</p>
 
     <h2 id="quickstart">Quick start</h2>
     <ol>
@@ -216,7 +220,7 @@ headforward eval ~/lt-rec                   # also compare the model's answers</
     <h3>Claude Code says "Not logged in"</h3>
     <p>The terminal version of Claude Code has its own sign-in, separate from the desktop app. Type <code>/login</code> inside Claude Code once. headforward passes your sign-in through unchanged.</p>
     <h3><code>headforward: command not found</code></h3>
-    <p>The folder pip installs scripts into isn't on your PATH. Run <code>python3 -m pip show -f headforward</code> to find it, or run the single file with <code>python3 headforward.py</code>.</p>
+    <p>Open a new terminal: the installer adds <code>~/.local/bin</code> to your PATH for new shells. If it still isn't found, add <code>export PATH="$HOME/.local/bin:$PATH"</code> to your shell profile. With uv or pipx, run <code>uv tool update-shell</code> or <code>pipx ensurepath</code>. <code>headforward doctor</code> checks this.</p>
     <h3>No savings were recorded</h3>
     <p>Hooks and settings apply to new sessions only, so start a new Claude Code session. Then run something noisy, like your tests, and look for a <code>headforward show ID</code> line in the output. For the proxy, run <code>headforward doctor</code>: a shell <code>ANTHROPIC_BASE_URL</code> overrides Claude Code settings and skips it. Codex with a ChatGPT login and browser apps never reach the proxy.</p>
     <h3>A command with <code>!</code> hangs at <code>dquote&gt;</code></h3>

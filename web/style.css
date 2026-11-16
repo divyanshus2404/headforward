@@ -78,7 +78,7 @@ button { font-family: var(--body); }
 .hero h1 s { color: var(--band-cut); font-weight: 500; text-decoration-thickness: 0.07em; }
 .hero p { color: var(--band-muted); font-size: 1.1rem; max-width: 50ch; }
 .cmd { display: flex; align-items: center; gap: 10px; background: var(--band-raise); border: 1px solid var(--band-line); border-radius: 10px; padding: 6px 6px 6px 16px; min-width: 0; }
-.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--band-ink); font-size: 0.95rem; }
+.cmd code { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--band-ink); font-size: 0.95rem; } /* wraps, so the whole install line stays visible */
 .cmd code b { color: var(--band-accent); font-weight: 600; }
 .cmd button, .term .copy { font-weight: 600; font-size: 0.8rem; background: var(--band-btn); color: var(--band-btn-ink); border: 0; padding: 8px 12px; border-radius: 7px; cursor: pointer; flex: none; }
 .term .copy { background: #1d3c37; color: #ecf6f3; } /* code blocks stay dark in both themes */
