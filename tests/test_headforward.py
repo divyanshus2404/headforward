@@ -48,9 +48,14 @@ def setUpModule():
     _real_old = (hf.OLD_PLIST, hf.OLD_LABEL)
     hf.OLD_PLIST = os.path.join(_SANDBOX.name, "old.plist")
     hf.OLD_LABEL = "com.headforward.test-old"
+    # smart-mode tests remember conversations; keep that out of the real ~/.headforward
+    global _real_stale
+    _real_stale = hf.STALE_FILE
+    hf.STALE_FILE = os.path.join(_SANDBOX.name, "dropped.json")
 
 
 def tearDownModule():
+    hf.STALE_FILE = _real_stale
     hf.OLD_PLIST, hf.OLD_LABEL = _real_old
     _SANDBOX.cleanup()
 
@@ -1137,6 +1142,114 @@ class ResumeTests(unittest.TestCase):
         hf.compress_request(fresh, False, True)
         self.assertEqual(json.dumps(resumed), json.dumps(fresh))
         self.assertLessEqual(len(hf._RESUME), hf.RESUME_KEEP)
+
+
+class StaleTests(unittest.TestCase):
+    """Old outputs are dropped only when the prompt cache has expired, then stay dropped."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.saved = (hf.BLOB_DIR, hf.STALE_FILE, hf._clock)
+        hf.BLOB_DIR = os.path.join(self.tmp.name, "outputs")
+        hf.STALE_FILE = os.path.join(self.tmp.name, "dropped.json")
+        self.now = 1000.0
+        hf._clock = lambda: self.now
+        self.forget()
+        hf._RESUME.clear()
+
+    def tearDown(self):
+        hf.BLOB_DIR, hf.STALE_FILE, hf._clock = self.saved
+        self.forget()
+        hf._RESUME.clear()
+        self.tmp.cleanup()
+
+    def forget(self):
+        """What a restarted proxy knows: nothing in memory."""
+        hf._STALE.update(loaded=False, seen={}, dropped=hf.collections.OrderedDict(), saved=0)
+
+    def output(self, i):
+        return "\n".join("file %d line %d: value = compute(%d, %d)" % (i, n, i, n) for n in range(80))
+
+    def conv(self, turns, ttl=None):
+        first = {"type": "text", "text": "fix the bug"}
+        if ttl:
+            first["cache_control"] = {"type": "ephemeral", "ttl": ttl}
+        msgs = [{"role": "user", "content": [first]}]
+        for i in range(turns):
+            tid = "toolu_%03d" % i
+            msgs.append({"role": "assistant", "content": [
+                {"type": "tool_use", "id": tid, "name": "Read", "input": {"file_path": "f%d.py" % i}}]})
+            msgs.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid,
+                                                      "content": self.output(i)}]})
+        return {"system": "you are an agent", "messages": msgs}
+
+    def send(self, body, at, smart=True):
+        self.now = at
+        stats = hf.compress_request(body, False, smart)
+        return body, stats
+
+    def results(self, body):
+        return [b["content"] for m in body["messages"] if isinstance(m["content"], list)
+                for b in m["content"] if b.get("type") == "tool_result"]
+
+    def test_nothing_is_dropped_while_the_cache_is_warm(self):
+        self.send(self.conv(20), 1000)
+        body, _ = self.send(self.conv(21), 1000 + 250)
+        self.assertNotIn("dropped to save context", json.dumps(body))
+
+    def test_old_outputs_are_dropped_once_the_cache_expired(self):
+        self.send(self.conv(20), 1000)
+        body, (before, after) = self.send(self.conv(21), 1000 + 400)
+        res = self.results(body)
+        old, recent = res[:-hf.STALE_KEEP], res[-hf.STALE_KEEP:]
+        self.assertEqual(len(old), 9)
+        for i, note in enumerate(old):
+            self.assertIn("this older output (80 lines) was dropped", note)
+            blob = re.search(r" show ([0-9a-f]{12})\]$", note).group(1)
+            with open(os.path.join(hf.BLOB_DIR, blob + ".txt")) as f:
+                self.assertEqual(f.read(), self.output(i))
+        self.assertFalse(any("dropped" in r for r in recent))
+        self.assertLess(after, before * 0.7)
+
+    def test_later_turns_resend_the_same_bytes(self):
+        self.send(self.conv(20), 1000)
+        first, _ = self.send(self.conv(21), 1400)
+        nxt, _ = self.send(self.conv(22), 1420)
+        n = len(first["messages"])
+        self.assertEqual(json.dumps(nxt["messages"][:n]), json.dumps(first["messages"]))
+        hf._RESUME.clear()  # and the same as compressing that request from scratch
+        fresh, _ = self.send(self.conv(22), 1440)
+        self.assertEqual(json.dumps(fresh), json.dumps(nxt))
+
+    def test_drops_survive_a_proxy_restart(self):
+        self.send(self.conv(20), 1000)
+        first, _ = self.send(self.conv(21), 1400)
+        self.forget()
+        hf._RESUME.clear()
+        nxt, _ = self.send(self.conv(22), 1410)
+        self.assertEqual(json.dumps(nxt["messages"][:len(first["messages"])]), json.dumps(first["messages"]))
+
+    def test_one_hour_cache(self):
+        self.send(self.conv(20, ttl="1h"), 1000)
+        body, _ = self.send(self.conv(21, ttl="1h"), 1400)
+        self.assertNotIn("dropped to save context", json.dumps(body))
+        body, _ = self.send(self.conv(22, ttl="1h"), 1400 + 3700)
+        self.assertIn("dropped to save context", json.dumps(body))
+
+    def test_never_dropped_unseen_lossless_small_or_images(self):
+        body, _ = self.send(self.conv(21), 1000)  # first time this proxy sees it
+        self.assertNotIn("dropped to save context", json.dumps(body))
+        body, _ = self.send(self.conv(21), 2000, smart=False)
+        self.assertNotIn("dropped to save context", json.dumps(body))
+        conv = self.conv(21)
+        conv["messages"][2]["content"][0]["content"] = "short"
+        conv["messages"][4]["content"][0]["content"] = [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "x" * 5000}}]
+        body, _ = self.send(conv, 3000)
+        res = self.results(body)
+        self.assertEqual(res[0], "short")
+        self.assertEqual(res[1][0]["type"], "image")
+        self.assertIn("dropped to save context", res[2])
 
 
 @unittest.skipIf(os.name == "nt", "runs the printed command with a POSIX shell")

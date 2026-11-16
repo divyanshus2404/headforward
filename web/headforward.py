@@ -719,6 +719,127 @@ def _is_json(text):
         return False
 
 
+# ---------------------------------------------------------------------------
+# Dropping stale output. Old tool results ride along on every turn long after they
+# matter. Editing early turns normally breaks the prompt cache, which costs more than
+# it saves, so they are only dropped on a turn where the cache has already expired:
+# that turn is written to the cache from scratch anyway. Each drop is remembered, so
+# every later turn sends the same bytes and keeps hitting the cache.
+# ---------------------------------------------------------------------------
+
+STALE_KEEP = 12           # the most recent tool results are never dropped
+STALE_MIN_CHARS = 2000    # smaller outputs aren't worth replacing
+STALE_FILE = os.path.join(HOME_DIR, "dropped.json")
+STALE_MAX = 5000          # remembered drops; the oldest are forgotten first
+_STALE = {"loaded": False, "seen": {}, "dropped": collections.OrderedDict(), "saved": 0}
+_STALE_LOCK = threading.Lock()
+_clock = time.time
+
+
+def _conversation(body):
+    """A key for the conversation a request belongs to: its system prompt and first user message."""
+    first = next((m for m in (body.get("messages") or body.get("input") or [])
+                  if isinstance(m, dict) and m.get("role") == "user"), None)
+    if first is None:
+        return None
+    sys_ = body.get("system") or body.get("instructions")
+    return hashlib.sha1(json.dumps([sys_, first], sort_keys=True, ensure_ascii=False)
+                        .encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def _cache_ttl(body):
+    """Seconds the provider keeps this request's prompt cache: 1 hour if asked for, else 5 minutes."""
+    # Cache markers sit on the system prompt, the tools and the newest messages.
+    msgs = body.get("messages") if isinstance(body.get("messages"), list) else []
+    where = json.dumps([body.get("system"), (body.get("tools") or [])[-1:], msgs[:1], msgs[-3:]])
+    return 3600 if re.search(r'"ttl":\s*"1h"', where) else 300
+
+
+def _stale_load():
+    if _STALE["loaded"]:
+        return
+    _STALE["loaded"] = True
+    try:
+        with open(STALE_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        _STALE["seen"].update(data.get("seen") or {})
+        _STALE["dropped"].update(data.get("dropped") or {})
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
+def _stale_save(force=False):
+    # Last-seen times only matter across restarts, so they are written at most once a minute.
+    now = _clock()
+    if not force and now - _STALE["saved"] < 60:
+        return
+    _STALE["saved"] = now
+    cutoff = now - 7 * 86400
+    seen = {k: t for k, t in _STALE["seen"].items() if t > cutoff}
+    _STALE["seen"] = seen
+    try:
+        os.makedirs(os.path.dirname(STALE_FILE), exist_ok=True)
+        tmp = STALE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"seen": seen, "dropped": _STALE["dropped"]}, f)
+        os.replace(tmp, STALE_FILE)
+    except OSError:
+        pass
+
+
+def _plain_text(content):
+    """The text of a tool result, or None if it holds anything but text (images, documents)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and all(isinstance(p, dict) and p.get("type") in ("text", "input_text", "output_text")
+                                         for p in content):
+        return "\n".join(p.get("text") or "" for p in content)
+    return None
+
+
+def drop_stale(body, events):
+    """Replace stale tool results with a short note, in place. Returns characters removed.
+
+    New drops happen only when the conversation's prompt cache has expired; drops made
+    earlier are re-applied on every request so the history stays byte-identical.
+    """
+    results = [ev for ev in events if ev[0] == "result" and ev[3]]
+    conv = _conversation(body)
+    with _STALE_LOCK:
+        _stale_load()
+        now = _clock()
+        last = _STALE["seen"].get(conv) if conv else None
+        expired = last is not None and now - last > _cache_ttl(body) + 30
+        if conv:
+            _STALE["seen"][conv] = now
+        added = False
+        if expired:
+            for _, holder, key, call_id in results[:-STALE_KEEP]:
+                if call_id in _STALE["dropped"]:
+                    continue
+                text = _plain_text(holder.get(key))
+                if text is None or len(text) < STALE_MIN_CHARS:
+                    continue
+                blob = _save_blob(text)
+                if not blob:
+                    continue
+                _STALE["dropped"][call_id] = (
+                    "[headforward: this older output (%d lines) was dropped to save context. "
+                    "To read it again, run: %s %s]" % (text.count("\n") + 1, show_cmd(), blob))
+                added = True
+            while len(_STALE["dropped"]) > STALE_MAX:
+                _STALE["dropped"].popitem(last=False)
+        removed = 0
+        for _, holder, key, call_id in results:
+            note = _STALE["dropped"].get(call_id)
+            text = _plain_text(holder.get(key)) if note else None
+            if text is not None and text != note:
+                holder[key] = note
+                removed += len(text) - len(note)
+        _stale_save(force=added)
+    return removed
+
+
 # Compression state at the end of recent conversations, keyed by a fingerprint of their
 # history. A few, because subagents and parallel sessions share one proxy.
 _RESUME = collections.OrderedDict()
@@ -737,12 +858,15 @@ def compress_request(body, lossy=False, smart=False):
          to those exact lines (agents re-open the same files constantly).
       4. Outputs over 400 lines keep start, end and error lines; the rest is
          saved locally and readable with `headforward show`.
+      5. Large results older than the last 12 are dropped once the conversation's
+         prompt cache has expired (see drop_stale).
     lossy=True also shortens runs of near-identical log lines.
 
     Earlier turns never change and the output is deterministic, so prompt caches
     keep hitting. Returns (chars_before, chars_after). User text is untouched.
     """
     events = list(_walk(body))
+    dropped = drop_stale(body, events) if smart else 0
     # Each request resends the whole conversation. Fingerprint it event by event and pick
     # up from where an earlier request with the same history left off, so only new turns
     # are compressed. The result is byte-identical to compressing from scratch.
@@ -805,7 +929,7 @@ def compress_request(body, lossy=False, smart=False):
             _RESUME[prints[-1]] = (outputs, seen, shadow, stats)
             while len(_RESUME) > RESUME_KEEP:
                 _RESUME.popitem(last=False)
-    return stats[0], stats[1]
+    return stats[0] + dropped, stats[1]
 
 
 def add_cache_control(body):
