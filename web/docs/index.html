@@ -166,6 +166,7 @@ headforward eval ~/lt-rec                   # also compare the model's answers</
       <tr><td>Git log, <code>ls -l</code>, grep, timestamped logs (hooks, <code>--lossy</code>)</td><td>Repeated and derivable parts removed; every distinct line kept.</td><td>Recoverable with <code>headforward show ID</code>.</td></tr>
       <tr><td>Lines already shown earlier, even after an edit renumbered them (default; off with <code>--lossless</code>)</td><td>Replaced by a reference to the earlier lines.</td><td>Yes. The lines are still in context.</td></tr>
       <tr><td>Outputs over 400 lines (default; off with <code>--lossless</code>)</td><td>Start, end and error lines kept; the note says exactly which command shows the rest.</td><td>Recoverable with <code>headforward show ID --lines A-B</code>.</td></tr>
+      <tr><td>Large outputs older than the last 12, once the prompt cache has expired (default; off with <code>--lossless</code>)</td><td>Replaced by a one-line note with the command that shows it again.</td><td>Recoverable with <code>headforward show ID</code>.</td></tr>
       <tr><td>Runs of near-identical log lines (<code>--lossy</code> only)</td><td>First and last lines kept, the middle replaced by a count.</td><td>No.</td></tr>
     </table></div>
     <p>Here is a JSON result before and after:</p>
@@ -175,7 +176,7 @@ headforward eval ~/lt-rec                   # also compare the model's answers</
 
 {"_cols":["id","total"],"_rows":[[1,19.99],[2,24.5],[3,8.0]],"_same":{"status":"shipped"}}</pre>
     <h3>Prompt caching</h3>
-    <p>Anthropic and OpenAI bill repeated prompt prefixes at a fraction of the normal rate. headforward is deterministic and never rewrites earlier turns, so each request still starts with exactly the bytes of the previous one and cache hits keep landing.</p>
+    <p>Anthropic and OpenAI bill repeated prompt prefixes at a fraction of the normal rate. headforward is deterministic, so each request still starts with exactly the bytes of the previous one and cache hits keep landing. It rewrites earlier turns only when the cache has already expired (after 5 minutes idle, or an hour with the longer cache). That turn is written to the cache from scratch anyway, so dropping old outputs then costs nothing, and the drops are remembered so later turns hit the cache again.</p>
 
     <h2 id="cli">CLI reference</h2>
     <div class="tbl"><table>

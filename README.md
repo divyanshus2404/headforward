@@ -156,10 +156,11 @@ API keys pass straight through to the provider and are never stored. If `ANTHROP
 | Git log, `ls -l`, grep, timestamped logs (hooks, `--lossy`) | Repeated and derivable parts removed; every distinct line kept | Recoverable with `headforward show ID` |
 | Runs of lines already shown earlier, even after an edit renumbered them (default; off with `--lossless`) | Replaced by a reference to the earlier lines | Yes, the lines are still in context |
 | Outputs over 400 lines (default; off with `--lossless`) | Start, end and error lines kept | Recoverable with `headforward show ID --lines A-B` |
+| Large outputs older than the last 12, once the prompt cache has expired (default; off with `--lossless`) | Replaced by a one-line note | Recoverable with `headforward show ID` |
 | Runs of near-identical log lines (`--lossy`) | First and last kept, middle replaced by a count | No |
 | Your messages and the system prompt | Untouched | n/a |
 
-Compression is deterministic and never changes earlier turns, so Anthropic and OpenAI prompt caching keeps hitting.
+Compression is deterministic, so Anthropic and OpenAI prompt caching keeps hitting. Earlier turns change only on a turn where the cache has already expired (after 5 minutes idle, or an hour when the client asks for the longer cache): that turn is rewritten to the cache from scratch anyway, so it is the one moment old outputs can be dropped for free. Each drop is remembered, so every later turn sends the same bytes again.
 
 ## Measured on real agent sessions
 
