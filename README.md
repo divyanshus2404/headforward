@@ -125,9 +125,9 @@ headforward desktop on global --https
 ### Wrap one session
 
 ```bash
-headforward wrap claude            # Claude Code
-headforward wrap --smart claude    # biggest savings, see below
-headforward wrap --lossy claude    # also shorten near-identical log lines
+headforward wrap claude              # Claude Code (smart mode, the default)
+headforward wrap --lossless claude   # only lossless rules
+headforward wrap --lossy claude      # also shorten near-identical log lines
 headforward wrap codex             # Codex CLI (API key login)
 headforward wrap aider             # Aider
 ```
@@ -152,10 +152,10 @@ API keys pass straight through to the provider and are never stored. If `ANTHROP
 | The same tool output seen again | Replaced by `[Same output as tool call X above.]` | Yes, the earlier copy is still in context |
 | Logs and command output | Repeated lines collapse to one line with `[xN]`; colour codes and trailing spaces removed | Yes, apart from colour codes |
 | File reads | Line-number padding trimmed | Yes |
-| Routine command output (hooks, `--smart`) | Runs of 3+ installs, progress bars, passing tests or build steps collapse to a count | Recoverable with `headforward show ID` |
+| Routine command output (hooks, default) | Runs of 3+ installs, progress bars, passing tests or build steps collapse to a count | Recoverable with `headforward show ID` |
 | Git log, `ls -l`, grep, timestamped logs (hooks, `--lossy`) | Repeated and derivable parts removed; every distinct line kept | Recoverable with `headforward show ID` |
-| Runs of lines already shown earlier, even after an edit renumbered them (`--smart`) | Replaced by a reference to the earlier lines | Yes, the lines are still in context |
-| Outputs over 400 lines (`--smart`) | Start, end and error lines kept | Recoverable with `headforward show ID --lines A-B` |
+| Runs of lines already shown earlier, even after an edit renumbered them (default; off with `--lossless`) | Replaced by a reference to the earlier lines | Yes, the lines are still in context |
+| Outputs over 400 lines (default; off with `--lossless`) | Start, end and error lines kept | Recoverable with `headforward show ID --lines A-B` |
 | Runs of near-identical log lines (`--lossy`) | First and last kept, middle replaced by a count | No |
 | Your messages and the system prompt | Untouched | n/a |
 
@@ -167,11 +167,15 @@ Compression is deterministic and never changes earlier turns, so Anthropic and O
 
 | Mode | Final context | Total session input | Median session |
 |---|---|---|---|
-| default | 13.9% / 14.9% smaller | 10.8% / 13.2% smaller | 2.7% / 0.0% |
-| `--smart` | **30.5% / 35.7% smaller** | **21.4% / 27.4% smaller** | **22.4% / 25.6%** |
-| `--smart --lossy` | 31.2% / 35.9% smaller | 22.1% / 27.6% smaller | 22.7% / 26.0% |
+| `--lossless` | 13.9% / 14.9% smaller | 10.8% / 13.2% smaller | 2.7% / 0.0% |
+| default (smart) | **30.5% / 35.7% smaller** | **21.4% / 27.4% smaller** | **22.4% / 25.6%** |
+| `--lossy` | 31.2% / 35.9% smaller | 22.1% / 27.6% smaller | 22.7% / 26.0% |
 
-Most of the `--smart` gain comes from agents re-opening files they have already seen: 65% of tool-output tokens in these sessions are file views, and half of all tool-output lines repeat lines shown earlier. `--smart` keeps every line available in context or on disk, but it changes how the agent sees repeated content, so measure it on your own work before relying on it.
+Most of the smart-mode gain comes from agents re-opening files they have already seen: 65% of tool-output tokens in these sessions are file views, and half of all tool-output lines repeat lines shown earlier. Smart mode keeps every line available, in context or through a `show` command that works on your machine, but it changes how the agent sees repeated content. `--lossless` turns it off, and `headforward eval` compares answers on your own recorded requests.
+
+On real Claude Code sessions (59 of the author's own, 17M characters of tool output), lossless rules cut 3.8% of tool output and smart mode 16.1%, or 18.3% weighted by how often each result is re-sent from the prompt cache. Most of what Claude reads there is source code, which is kept as written.
+
+Smart mode adds little work: the proxy picks up each conversation where its previous request left off, so a turn only compresses what's new (0.14 s at most on those sessions, with identical output).
 
 ## Check it on your own work
 
