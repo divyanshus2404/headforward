@@ -205,7 +205,7 @@ class SmartTests(unittest.TestCase):
         out = b["messages"][0]["content"][0]["content"]
         self.assertLess(len(out), len(big) / 3)
         self.assertIn("501: step 500 FAILED: boom", out)
-        blob = hf.re.search(r"headforward show ([0-9a-f]{12})", out).group(1)
+        blob = hf.re.search(r" show ([0-9a-f]{12})", out).group(1)
         buf = io.StringIO()
         with redirect_stdout(buf):
             hf.cmd_show([blob, "--lines", "500-502"])
@@ -232,7 +232,7 @@ class NoiseTests(unittest.TestCase):
                          ["tests/test_api.py::test_login FAILED", "E   assert 401 == 200",
                           "=== 1 failed, 30 passed in 2.10s ==="])
         out = hf._filter_noise(text)
-        self.assertIn("[30 passing test lines omitted; full output: headforward show ", out)
+        self.assertIn("[30 passing test lines omitted; full output: %s " % hf.show_cmd(), out)
         self.assertIn("test_login FAILED", out)
         self.assertIn("E   assert 401 == 200", out)
         self.assertIn("1 failed, 30 passed", out)
@@ -496,7 +496,7 @@ class CompactTests(unittest.TestCase):
             self.assertIn(f, out)
         for g in gone:
             self.assertNotIn(g, out)
-        blob = re.search(r"headforward show (\w+)", out).group(1)
+        blob = re.search(r" show (\w+)", out).group(1)
         with open(os.path.join(hf.BLOB_DIR, blob + ".txt")) as f:
             self.assertEqual(f.read(), text)  # the full output is recoverable
         return out
@@ -1088,6 +1088,79 @@ class RenameTests(unittest.TestCase):
         self.assertIn("headforward", r.stdout)
 
 
+class ResumeTests(unittest.TestCase):
+    """The proxy resumes from the previous request's state; output must not change by a byte."""
+
+    def conversation(self):
+        log = "\n".join("INFO step %d ok" % (i % 7) for i in range(60))
+        code = "\n".join("%d\tdef f%d(x):\n%d\t    return x * %d" % (2 * i, i, 2 * i + 1, i) for i in range(80))
+        msgs = []
+        for turn in range(12):
+            tid = "toolu_%02d" % turn
+            msgs.append({"role": "assistant", "content": [
+                {"type": "tool_use", "id": tid, "name": "Read", "input": {"file_path": "a.py"}}]})
+            body = [code, log, json.dumps(ROWS, indent=2), code.replace("x * 3", "x * 33")][turn % 4]
+            msgs.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid, "content": body}]})
+        return msgs
+
+    def test_turn_by_turn_matches_from_scratch(self):
+        msgs = self.conversation()
+        other = [dict(m) for m in self.conversation()[:6]]
+        other[1] = {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_00", "content": LOGS}]}
+        for smart in (True, False):
+            hf._RESUME.clear()
+            for k in range(2, len(msgs) + 1, 2):
+                for conv in (msgs, other):  # two conversations through one proxy, interleaved
+                    if k > len(conv):
+                        continue
+                    resumed = {"messages": json.loads(json.dumps(conv[:k]))}
+                    r = hf.compress_request(resumed, False, smart)
+                    saved = dict(hf._RESUME)
+                    hf._RESUME.clear()
+                    fresh = {"messages": json.loads(json.dumps(conv[:k]))}
+                    f = hf.compress_request(fresh, False, smart)
+                    hf._RESUME.clear()
+                    hf._RESUME.update(saved)
+                    self.assertEqual(json.dumps(resumed), json.dumps(fresh))
+                    self.assertEqual(r, f)
+
+    def test_a_changed_history_is_compressed_from_scratch(self):
+        hf._RESUME.clear()
+        msgs = self.conversation()
+        hf.compress_request({"messages": json.loads(json.dumps(msgs))}, False, True)
+        edited = json.loads(json.dumps(msgs))
+        edited[1]["content"][0]["content"] = "something else entirely"
+        resumed = {"messages": json.loads(json.dumps(edited))}
+        hf.compress_request(resumed, False, True)
+        hf._RESUME.clear()
+        fresh = {"messages": json.loads(json.dumps(edited))}
+        hf.compress_request(fresh, False, True)
+        self.assertEqual(json.dumps(resumed), json.dumps(fresh))
+        self.assertLessEqual(len(hf._RESUME), hf.RESUME_KEEP)
+
+
+@unittest.skipIf(os.name == "nt", "runs the printed command with a POSIX shell")
+class ShowCommandTests(unittest.TestCase):
+    def test_the_printed_command_returns_the_saved_output(self):
+        saved = hf.BLOB_DIR
+        with tempfile.TemporaryDirectory() as d:
+            hf.BLOB_DIR = os.path.join(d, "outputs")
+            try:
+                big = "\n".join("line %d of a long build" % i for i in range(1000))
+                out = hf._expandable(big)
+                note = re.search(r"run: (.+ show [0-9a-f]{12}) --lines A-B\]", out).group(1)
+                env = dict(os.environ, HOME=d)
+                hf_home = os.path.join(d, ".headforward")
+                os.makedirs(hf_home)
+                os.symlink(hf.BLOB_DIR, os.path.join(hf_home, "outputs"))
+                r = subprocess.run(note + " --lines 500-501", shell=True, env=env,
+                                   capture_output=True, text=True, timeout=30)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("line 499 of a long build", r.stdout)
+            finally:
+                hf.BLOB_DIR = saved
+
+
 @unittest.skipIf(os.name == "nt", "install.sh is for macOS and Linux")
 class InstallTests(unittest.TestCase):
     """web/install.sh, run with `sh` (dash on Linux CI) against a local copy of the site."""
@@ -1190,7 +1263,7 @@ class WrapTests(unittest.TestCase):
                 from contextlib import redirect_stderr
                 with redirect_stderr(err):
                     code = \
-                        hf.cmd_wrap(["--smart", "claude"], "http://127.0.0.1:%d" % up.server_address[1])
+                        hf.cmd_wrap(["claude"], "http://127.0.0.1:%d" % up.server_address[1])  # smart is the default
             finally:
                 os.environ["PATH"] = old_path
                 up.shutdown()

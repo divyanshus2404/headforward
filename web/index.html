@@ -83,9 +83,9 @@
           <p>A test session heavy on data: an API result fetched twice, 120 log lines, a file and a test run each repeated. 18,466 → 7,304 tokens.</p>
         </div>
         <div class="res">
-          <div class="res-head"><b>14%</b><span>smaller context on average, 30–36% with --smart</span></div>
-          <div class="meter" aria-hidden="true"><i style="width:14%"></i></div>
-          <p>400 real coding-agent sessions from the public SWE-agent dataset, mostly reading and editing source code. <code>--smart</code> also recognizes lines the agent has already seen.</p>
+          <div class="res-head"><b>30–36%</b><span>smaller context on average (14% with --lossless)</span></div>
+          <div class="meter" aria-hidden="true"><i style="width:33%"></i></div>
+          <p>400 real coding-agent sessions from the public SWE-agent dataset, mostly reading and editing source code. Most of the saving comes from lines the agent has already seen, which become references.</p>
         </div>
       </div>
       <p class="note">Your own numbers: <code>headforward stats</code> reports what Anthropic or OpenAI actually billed and what was saved.</p>
@@ -302,7 +302,7 @@ headforward desktop off</div>
         <h2>Before you try it.</h2>
       </div>
       <div class="faq">
-        <details><summary>Does it change the model's answers?</summary><p>The default rules are lossless: every compressed result can be rebuilt exactly, or points to an identical copy already in the conversation. Whether a model behaves the same on your work is something you can check: <code>headforward eval</code> replays your recorded requests with and without compression and compares the answers.</p></details>
+        <details><summary>Does it change the model's answers?</summary><p>Nothing is thrown away. Repeated lines point to the copy already in the conversation, and the middle of a very long output is saved on your machine with the exact command to read it. <code>--lossless</code> keeps only rules that rebuild the original exactly. Whether a model behaves the same on your work is something you can check: <code>headforward eval</code> replays your recorded requests with and without compression and compares the answers.</p></details>
         <details><summary>Is my API key or Claude sign-in safe?</summary><p>The proxy runs only on your computer, listens on 127.0.0.1, and passes credentials straight to Anthropic or OpenAI. They are never stored or logged. In <code>--https</code> mode it decrypts only <code>api.anthropic.com</code>, with a local certificate that can vouch for nothing else; every other site gets a plain tunnel it never reads.</p></details>
         <details><summary>Does it break prompt caching?</summary><p>No. Compression is deterministic and never rewrites earlier turns, so each request still begins with the same bytes as the last one and cache hits keep landing.</p></details>
         <details><summary>Does it work with claude.ai or chatgpt.com?</summary><p>Those sites talk directly to their own servers, so no proxy can sit in between. You can compress text before pasting it: <code>pbpaste | headforward - -l high | pbcopy</code> on macOS.</p></details>

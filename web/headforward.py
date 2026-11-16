@@ -20,9 +20,11 @@ Prompt levels:
   high    + articles, hedges, markdown emphasis, minify JSON code blocks
   max     + strip comment-only lines and blank lines inside code blocks
 """
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 import argparse
+import collections
+import copy
 import datetime
 import difflib
 import hashlib
@@ -183,17 +185,24 @@ def compress(text, level="medium"):
     return out[:1].upper() + out[1:]
 
 
+_ENCODERS = {}
+
+
 def count(text, model="gpt-4o"):
     """Return (tokens, exact). Uses tiktoken when installed, else ~4 chars/token."""
-    try:
-        import tiktoken
+    if model not in _ENCODERS:  # looking the encoder up costs more than encoding a typical tool result
         try:
-            enc = tiktoken.encoding_for_model(model)
-        except KeyError:
-            enc = tiktoken.get_encoding("o200k_base")
-        return len(enc.encode(text)), True
-    except ImportError:
+            import tiktoken
+            try:
+                _ENCODERS[model] = tiktoken.encoding_for_model(model)
+            except KeyError:
+                _ENCODERS[model] = tiktoken.get_encoding("o200k_base")
+        except ImportError:
+            _ENCODERS[model] = None
+    enc = _ENCODERS[model]
+    if enc is None:
         return max(1, round(len(text) / 4)), False
+    return len(enc.encode(text)), True
 
 
 # ---------------------------------------------------------------------------
@@ -530,7 +539,7 @@ def _filter_noise(text):
             blob = blob or _save_blob(text)
             if not blob:
                 return text
-            out.append("[%d %s lines omitted; full output: headforward show %s]" % (j - i, kinds[i], blob))
+            out.append("[%d %s lines omitted; full output: %s %s]" % (j - i, kinds[i], show_cmd(), blob))
         else:
             out.extend(lines[i:j])
         i = j
@@ -662,8 +671,20 @@ def _compact_shapes(text):
         if len(short) > 0.9 * len(text):
             return text
         blob = _save_blob(text)
-        return short + "\n[compacted; full output: headforward show %s]" % blob if blob else text
+        return short + "\n[compacted; full output: %s %s]" % (show_cmd(), blob) if blob else text
     return text
+
+
+_SHOW_CMD = []
+
+
+def show_cmd():
+    """The command an agent can run to read a saved output: `headforward show` when that
+    is on PATH, else this exact file. Fixed per process, so compressed output stays byte-stable."""
+    if not _SHOW_CMD:
+        _SHOW_CMD.append("headforward show" if shutil.which("headforward") else
+                         "%s %s show" % (shlex.quote(sys.executable), shlex.quote(os.path.abspath(__file__))))
+    return _SHOW_CMD[0]
 
 
 def _expandable(text):
@@ -682,7 +703,7 @@ def _expandable(text):
     middle = [(n, l) for n, l in enumerate(lines[head:-tail], head) if _ERRORISH.search(l)][:40]
     out = lines[:head]
     out.append("[headforward: %d of %d lines omitted. Error-like lines from the omitted part follow. "
-               "To read any part, run: headforward show %s --lines A-B]" % (len(lines) - head - tail, len(lines), blob))
+               "To read any part, run: %s %s --lines A-B]" % (len(lines) - head - tail, len(lines), show_cmd(), blob))
     out += ["%d: %s" % (n + 1, l) for n, l in middle]
     out.append("[end of excerpt; last %d lines follow]" % tail)
     return "\n".join(out + lines[-tail:])
@@ -696,6 +717,13 @@ def _is_json(text):
         return True
     except ValueError:
         return False
+
+
+# Compression state at the end of recent conversations, keyed by a fingerprint of their
+# history. A few, because subagents and parallel sessions share one proxy.
+_RESUME = collections.OrderedDict()
+_RESUME_LOCK = threading.Lock()
+RESUME_KEEP = 8
 
 
 def compress_request(body, lossy=False, smart=False):
@@ -714,12 +742,37 @@ def compress_request(body, lossy=False, smart=False):
     Earlier turns never change and the output is deterministic, so prompt caches
     keep hitting. Returns (chars_before, chars_after). User text is untouched.
     """
-    stats = [0, 0]
-    seen = {}
-    shadow = Shadow()
+    events = list(_walk(body))
+    # Each request resends the whole conversation. Fingerprint it event by event and pick
+    # up from where an earlier request with the same history left off, so only new turns
+    # are compressed. The result is byte-identical to compressing from scratch.
+    chain = hashlib.sha1(b"lossy" if lossy else b"").copy()
+    chain.update(b"smart" if smart else b"")
+    prints = []
+    for ev in events:
+        if ev[0] == "wrote":
+            chain.update(b"w\0%s\0%s\0" % (ev[1].encode("utf-8", "replace"), ev[2].encode("utf-8", "replace")))
+        else:
+            chain.update(b"r\0%s\0%s\0" % (str(ev[3]).encode("utf-8", "replace"),
+                                            json.dumps(ev[1].get(ev[2]), ensure_ascii=False).encode("utf-8", "replace")))
+        prints.append(chain.hexdigest())
+    start, state = 0, None
+    with _RESUME_LOCK:
+        for i in range(len(prints) - 1, -1, -1):
+            if prints[i] in _RESUME:
+                start, state = i + 1, _RESUME.pop(prints[i])  # taken, not shared: it is about to change
+                break
+    if state:
+        outputs, seen, shadow, stats = state
+        for ev, out in zip(events, outputs):
+            if ev[0] == "result":
+                ev[1][ev[2]] = out if isinstance(out, str) else copy.deepcopy(out)
+    else:
+        outputs, seen, shadow, stats = [], {}, Shadow(), [0, 0]
 
-    for event in _walk(body):
+    for event in events[start:]:
         if event[0] == "wrote":
+            outputs.append(None)
             if smart:
                 shadow.add(event[1], event[2].split("\n"))
             continue
@@ -746,6 +799,12 @@ def compress_request(body, lossy=False, smart=False):
             stats[1] += len(out)
             return out
         holder[key] = _tool_text(holder.get(key), fn)
+        outputs.append(copy.deepcopy(holder[key]) if not isinstance(holder[key], str) else holder[key])
+    if prints:
+        with _RESUME_LOCK:
+            _RESUME[prints[-1]] = (outputs, seen, shadow, stats)
+            while len(_RESUME) > RESUME_KEEP:
+                _RESUME.popitem(last=False)
     return stats[0], stats[1]
 
 
@@ -1138,17 +1197,18 @@ def summarize(rows):
     Tokens saved are estimated from characters removed, converted at the
     tokens-per-character rate the provider actually billed for those requests.
     """
-    s = {"requests": sum(r["p"] != "hook" for r in rows), "in": 0, "cached": 0, "out": 0, "saved": 0.0, "measured": 0}
+    s = {"requests": sum(r["p"] != "hook" for r in rows), "in": 0, "cached": 0, "out": 0, "saved": 0.0,
+         "measured": 0, "tool": 0.0}
     for r in rows:
         removed = r["b"] - r["a"]
+        rate = r["in"] / r["req"] if "in" in r and r.get("req") else 0.25  # tokens per character
         if "in" in r and r.get("req"):
             s["measured"] += 1
             s["in"] += r["in"]
             s["cached"] += r["cached"]
             s["out"] += r["out"]
-            s["saved"] += removed * r["in"] / r["req"]
-        else:
-            s["saved"] += removed / 4.0
+        s["saved"] += removed * rate
+        s["tool"] += r["b"] * rate  # tool output as it would have been sent, in tokens
     s["saved"] = int(s["saved"])
     return s
 
@@ -1158,8 +1218,9 @@ def _fmt_summary(s):
         return "~%s tokens saved (estimate; no usage reported yet)" % format(s["saved"], ",")
     pct = 100.0 * s["saved"] / (s["in"] + s["saved"])
     cache = 100.0 * s["cached"] / s["in"]
-    return ("%s input tokens billed, ~%s saved (%.0f%% less input), cache hits %.0f%%, %s output"
-            % (format(s["in"], ","), format(s["saved"], ","), pct, cache, format(s["out"], ",")))
+    tool = " (%.0f%% of tool output)" % (100.0 * s["saved"] / s["tool"]) if s.get("tool") else ""
+    return ("%s input tokens billed, ~%s saved%s, %.1f%% less input, cache hits %.0f%%, %s output"
+            % (format(s["in"], ","), format(s["saved"], ","), tool, pct, cache, format(s["out"], ",")))
 
 
 def _flag(args, name):
@@ -1221,7 +1282,8 @@ def _claude_settings_base_url(cwd=None):
 
 def cmd_wrap(argv, upstream=None):
     lossy, argv = _flag(argv, "--lossy")
-    smart, argv = _flag(argv, "--smart")
+    _, argv = _flag(argv, "--smart")  # the default now; still accepted
+    lossless, argv = _flag(argv, "--lossless")
     cache, argv = _flag(argv, "--cache")
     record, argv = _option(argv, "--record")
     if not argv:
@@ -1231,7 +1293,7 @@ def cmd_wrap(argv, upstream=None):
     if not shutil.which(agent):
         print("headforward: '%s' is not installed or not on your PATH" % agent, file=sys.stderr)
         return 127
-    smart = smart or bool(_env("SMART"))
+    smart = not (lossless or _env("LOSSLESS"))
     lossy = lossy or bool(_env("LOSSY"))
     env = dict(os.environ)
 
@@ -1355,7 +1417,8 @@ def cmd_eval(argv):
                     help="only count tokens (free on Anthropic); don't generate answers")
     ap.add_argument("--limit", type=int, default=50, help="max requests to replay (default 50)")
     ap.add_argument("--lossy", action="store_true", help="evaluate lossy mode")
-    ap.add_argument("--smart", action="store_true", help="evaluate smart mode")
+    ap.add_argument("--lossless", action="store_true", help="evaluate lossless mode instead of the default")
+    ap.add_argument("--smart", action="store_true", help=argparse.SUPPRESS)  # the default now
     ap.add_argument("--max-tokens", type=int, default=1024)
     a = ap.parse_args(argv)
 
@@ -1370,7 +1433,7 @@ def cmd_eval(argv):
         rec = json.load(open(os.path.join(a.folder, name)))
         p, path, orig = rec["provider"], rec["path"], rec["body"]
         comp = json.loads(json.dumps(orig))
-        compress_request(comp, a.lossy, a.smart)
+        compress_request(comp, a.lossy, not a.lossless)
         try:
             if p == "anthropic":
                 keys = ("model", "system", "messages", "tools", "tool_choice", "thinking")
@@ -2522,14 +2585,16 @@ def cmd_desktop(argv):
     ap.add_argument("action", choices=["on", "off", "status"])
     ap.add_argument("target", nargs="?", default=".",
                     help="project folder to turn on (default: current folder), or `global` for every project")
-    ap.add_argument("--smart", action="store_true", help="use smart mode in the background proxy")
+    ap.add_argument("--lossless", action="store_true",
+                    help="only lossless compression in the background proxy (smart mode is the default)")
+    ap.add_argument("--smart", action="store_true", help=argparse.SUPPRESS)  # the default now
     ap.add_argument("--https", action="store_true",
                     help="also reach Claude Code in the desktop app, which ignores base URLs, "
                          "by acting as its HTTPS proxy (decrypts api.anthropic.com with a local CA)")
     a = ap.parse_args(argv)
     if a.action == "on":
         try:
-            path = desktop_on(a.target, (["--smart"] if a.smart else []) + (["--https"] if a.https else []))
+            path = desktop_on(a.target, (["--lossless"] if a.lossless else []) + (["--https"] if a.https else []))
         except RuntimeError as e:
             print("headforward: %s" % e, file=sys.stderr)
             return 1
@@ -2556,7 +2621,9 @@ def cmd_desktop(argv):
                                      "NOT running" + (" (installed but down: Claude Code sessions pointed at it "
                                                       "will fail; run `headforward desktop on` or `off`)"
                                                       if os.path.exists(DESKTOP_PLIST) else "")))
-    print("mode: %s" % (" ".join(state.get("mode") or []) or "lossless"))
+    mode = state.get("mode") or []
+    print("mode: %s%s" % ("lossless" if "--lossless" in mode else "smart",
+                          " + https" if "--https" in mode else ""))
     if state.get("upstream"):
         print("forwards to: %s" % state["upstream"])
     for p in state.get("settings", []):
@@ -2772,10 +2839,10 @@ Always-on proxy for terminal Claude Code (macOS):
   headforward desktop off                 stop it and undo every settings change
   headforward prompt.txt [-l high]        compress a prompt file (- for stdin)
 
-wrap and proxy options:
-  --smart           also reference lines already shown earlier (re-opened files) and
-                    shorten outputs over 400 lines; the full text stays readable with
-                    `headforward show ID --lines A-B`
+wrap and proxy options (smart mode is the default: lines already shown earlier become
+references, and outputs over 400 lines keep their start, end and errors, with the full
+text readable through `headforward show ID --lines A-B`):
+  --lossless        only lossless rules: no references, no shortening
   --lossy           also shorten runs of near-identical log lines (keeps first and last)
   --cache           Anthropic: add prompt-caching markers when an app doesn't set any
   --record FOLDER   save original requests (no API keys) for `headforward eval`
@@ -2836,7 +2903,9 @@ def main(argv=None):
         ap.add_argument("--port", type=int, default=8787)
         ap.add_argument("--upstream", help="send everything to this base URL instead")
         ap.add_argument("--lossy", action="store_true", help="also shorten runs of near-identical log lines")
-        ap.add_argument("--smart", action="store_true", help="reference repeated lines, shorten huge outputs")
+        ap.add_argument("--lossless", action="store_true",
+                        help="only lossless rules: no line references, no shortening of huge outputs")
+        ap.add_argument("--smart", action="store_true", help=argparse.SUPPRESS)  # the default now
         ap.add_argument("--cache", action="store_true", help="add Anthropic prompt-caching markers")
         ap.add_argument("--record", metavar="FOLDER", help="save original requests for `headforward eval`")
         ap.add_argument("--quiet", action="store_true", help="don't print a line per request")
@@ -2852,7 +2921,7 @@ def main(argv=None):
             if urllib.parse.urlsplit(base).netloc in own:  # would forward to itself forever
                 UPSTREAMS[prov] = {"anthropic": "https://api.anthropic.com", "openai": "https://api.openai.com"}[prov]
         try:
-            srv = start_proxy(a.port, a.upstream, None if a.quiet else log, a.lossy, a.record, a.smart, a.cache,
+            srv = start_proxy(a.port, a.upstream, None if a.quiet else log, a.lossy, a.record, not a.lossless, a.cache,
                               a.https)
         except RuntimeError as e:
             print("headforward: %s" % e, file=sys.stderr)
